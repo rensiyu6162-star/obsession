@@ -434,12 +434,14 @@ const S = {flags: {}, dread: 0, seen: {}, day: false};
 const has = k => !!S.flags[k];
 const mark = k => { S.flags[k] = true; };
 // 门外那个机位的三张图：他进门 / 两小时后他出门 / 门口空了。
-// 同一个机位、同一种光（out 和 empty 是拿 v1 当参考图生的），所以换的只是贴图。
-const PANO_OUT_HIM = 'images/pano-outside-out.png';
-const PANO_OUT_EMPTY = 'images/pano-outside-empty.png';
-// 第四张：夜里的同一条街。"手机没掏出来"那条支线走到最后，她是自己从他家走出来的，
-// 那时候天早黑了，再用中午那张就散了。也是拿 empty 当参考图生的，只改光，
-// 房子、灌木、车、树一个都没动，所以热点坐标继续通用。
+// 同一个机位、同一栋房子（out-eve / empty-eve 是顺着 v1 那张 img2img 下来的），
+// 换的只是贴图和光：v1 是白天他进门，两小时之后天就有点黑了——路灯刚亮、影子全没了，
+// 他家一楼的窗户是暖黄的（他把灯留着了，所以后面进屋里也是亮的）。
+const PANO_OUT_HIM = 'images/pano-outside-out-eve.png';
+const PANO_OUT_EMPTY = 'images/pano-outside-empty-eve.png';
+// 第四张：全黑的同一条街。"手机没掏出来"那条支线走到最后，她是自己从他家走出来的，
+// 那时候比出门那会儿又黑了一大截：天全黑、他家每一扇窗都灭了。
+// 也是拿同一条街的图当参考生的，房子、灌木、车、树一个都没动，所以热点坐标继续通用。
 const PANO_OUT_DUSK = 'images/pano-outside-dusk.png';
 // 第二章那两张：她自己租下的隔壁。镜像户型、空屋子、裸地板，什么家具都没有——
 // 一个纸箱、一台电钻、一个睡袋，这就是她搬过来的全部。空本身就是这一章的调子。
@@ -522,7 +524,8 @@ const NODES = {
        on: () => mark('otherName')},
     ],
   },
-  // 最后一段：周六下午，他家门外。玩家蹲在灌木丛里，隔着树叶看他进门。
+  // 最后一段：周六，他家门外。玩家蹲在灌木丛里，隔着树叶看他进门；
+  // 两个小时后他再出来时天已经有点黑了（见 hedgeBeat / PANO_OUT_HIM）。
   // 这张全景图自带"藏在灌木里"——前景的枝叶就是遮挡（tools/gen_pano_outside.py）。
   // 同一个机位另有两张：他出门（-out）和门口空了（-empty），见 hedgeBeat。
   outside: {
@@ -562,11 +565,13 @@ const NODES = {
     ],
   },
   // 门里面。他不在家，你有整个晚上。
-  // 热点坐标是对着 images/pano-hishouse-v1.png 量的（u=x/1774, v=y/887）。
+  // 外面天已经黑了，所以屋里这张是夜版（v2 = v1 只改光）：他把落地灯和厨房的灯留着了，
+  // 百叶窗的缝里是夜色。热点坐标还是对着 v1 量的（u=x/1774, v=y/887）——
+  // img2img 只改光，家具一件都没动，坐标全部沿用。
   // 前门在图的左右边缘（接缝上），所以从门外走进来时 arrive 取 0.02。
   hishouse: {
     name: '他家',
-    pano: 'images/pano-hishouse-v1.png',
+    pano: 'images/pano-hishouse-v2.png',
     off: 0,
     rain: 0, wind: 0, drone: 0.06,
     spots: [
@@ -601,11 +606,12 @@ const NODES = {
   // 那么厚、下面架四条短腿"）才生效，但缝里地板亮得一清二楚——能躲进去，却看不出
   // "不知道里面有什么"。所以 v10 不再让模型猜，直接按量出来的坐标把那道缝压进阴影。
   // v4~v9 都留在 images/ 下没删，方便回退对比。
-  // 热点坐标对着 images/pano-hisbed-v7.png 量的，v8/v9/v10 家具位置没动，继续沿用
+  // v11 = v10 只改光的夜版：外面天黑了，屋里只开着床头那盏小灯，百叶窗的缝里是夜色。
+  // 热点坐标对着 images/pano-hisbed-v7.png 量的，v8~v11 家具位置没动，继续沿用
   //（u=x/1774, v=y/887）。
   hisbed: {
     name: '他的卧室',
-    pano: 'images/pano-hisbed-v10.png',
+    pano: 'images/pano-hisbed-v11.png',
     off: 0,
     rain: 0, wind: 0, drone: 0.05,
     // 进门那句不能挂在楼梯热点上——那句是在楼梯上说的。走完才说这一句。
@@ -643,7 +649,7 @@ const NODES = {
   // 坐标就是那道亮着的缝（进来时朝的也是这个方向）。
   underbed: {
     name: '床底',
-    pano: 'images/pano-underbed-v1.png',
+    pano: 'images/pano-underbed-v2.png',
     off: 0,
     rain: 0, wind: 0, drone: 0.14,          // 无窗无雨，只剩心跳那种低频压得更重
     onArrive: () => underBedBeat(),
@@ -2236,7 +2242,7 @@ app.addEventListener('click', e => {
     blip('note');
     callScene([
       {t: '你伸手摸了一下那张你睡过无数次的床。', d: 4.6},
-      {t: '枕头上有几根长头发。你把它们捏起来，举到百叶窗那道光里看。', d: 6.0,
+      {t: '枕头上有几根长头发。你把它们捏起来，举到床头灯那点光里看。', d: 6.0,
        f: () => showPlate(PLATE_HAIR)},
       {t: '金棕色，很长，明显不是他的。你把它们绕在食指上绕了三圈，塞进了外套口袋。', d: 7.0},
       {d: 1.6, f: hidePlate},
@@ -2396,10 +2402,10 @@ const plateEl = document.getElementById('plate');
 // 它基本只是留着：contain 会把整张图完整装进窗口，短边方向才有余量可偏。
 //   门口那张已经重做成横构图了（him-door-v2.jpg，1536x1024，跟 claire-underbed 一个尺寸）：
 //   旧版 him-door.jpg 是竖的 1023x1537，contain 之后左右两条黑边吃掉一半画面。
-//   头发那张（1023x1537）还是竖的，横屏里是高度顶满、左右留黑边，竖向偏移不起作用，
-//   所以那个 15% 是无害的历史值，捏着头发的手指完整在画面里。
+//   头发那张同样重做成了横的（hair-light-v2.jpg，1536x1024）：竖版在横屏里高度顶满、
+//   左右两条大黑边，跟别的贴片对不上。横版居中取景就行。
 const PLATE_DOOR = ['images/him-door-v2.jpg', '50% 50%'];
-const PLATE_HAIR = ['images/hair-light.jpg', '50% 15%'];
+const PLATE_HAIR = ['images/hair-light-v2.jpg', '50% 50%'];
 // 被发现那一下：Claire 把头倒过来伸进床底。这张是横构图（参考图先裁成了 16:9），
 // 所以居中取景就行，不用像上面两张那样往上偏。
 // 注意别和通讯录里那个 Sarah 搞混：Sarah 是闺蜜，Claire 是 Jude 的新女友。
@@ -2421,9 +2427,9 @@ const PLATE_APPRAISE = ['images/claire-appraise-v2.jpg', '50% 50%'];
 const PLATE_CHOKE = ['images/claire-choke.jpg', '50% 50%'];
 const PLATE_FLOOR = ['images/claire-floor.jpg', '50% 50%'];
 const PLATE_AFTER = ['images/after-hand.jpg', '50% 50%'];
-// 结局前最后一个画面：平躺看天花板。百叶窗那道光已经爬到墙和天花板的交界上——
-// 前面几张里它从床上移到墙上，这张接着往上走，是这一章唯一的时间交代（天快黑了）。
-// 画面里什么都没有，故意的：这一拍全靠静。
+// 结局前最后一个画面：平躺看天花板。夜里了：路灯透过百叶窗在墙和天花板的交界上印出
+// 一道冷蓝的条纹，近处角落是床头灯烘上来的一小片暖黄——一个天花板上冷暖两种光，
+// 就是"屋里开着灯、外面全黑了"这件事本身。画面里什么都没有，故意的：这一拍全靠静。
 const PLATE_CEILING = ['images/ceiling.jpg', '50% 50%'];
 // "手机没掏出来"那一支的收尾：邻居家临街窗户玻璃里面贴着的那张 A4 出租启事。
 // 这张必须是贴片——全景图那个分辨率上一张纸连白点都算不上，字更别想。
@@ -2481,9 +2487,11 @@ async function hedgeBeat() {
   blip('whoosh');
   say('你把身子往灌木更深处缩了缩。树叶合上了，只剩一道缝。', 3400);
   await waitStep(3000);
-  await fadePano(PANO_OUT_HIM, 1600);          // 远景：门开了，他站在门口
-  say('两个小时后，那扇门开了。', 3000);
-  await waitStep(2600);
+  // 字幕先出、图后溶：让"天暗下来"这句话和画面里的光同时发生，而不是先莫名其妙地黑掉
+  say('两个小时后，天暗下来了。', 3000);
+  await fadePano(PANO_OUT_HIM, 1600);          // 远景：门开了，他站在门口（傍晚那张）
+  say('那扇门开了。', 2600);
+  await waitStep(2400);
   showPlate(PLATE_DOOR);                       // 特写：这才看得清脸
   say('他就站在门口，低头看着手机。你看得清他的脸——他一次都没往这边看。', 6000);
   await waitStep(6400);
@@ -3119,7 +3127,7 @@ async function caughtBeat() {
   ]);
   showPlate(PLATE_AFTER);                      // 硬切，推近是连着的
   await callScene([
-    {t: '房间里很安静。窗外那道光已经从床上移到墙上去了。', d: 6.6},
+    {t: '房间里很安静。床头那盏灯还开着，窗外的路灯把百叶窗的影子印在墙上。', d: 6.6},
     {t: '你把地板擦了。你知道抹布在哪儿——楼下水槽底下第二格，他从来不换地方。', d: 7.8,
      // 警笛提前到这一句就起：等她躺下的时候，那声音已经在窗外某个地方响着了。
      // 44 秒的曲线正好铺到「它越来越近了」那句说完（7.8+5+7.6+4.8+5.2+6.4+7 ≈ 43.8）。
