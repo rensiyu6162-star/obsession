@@ -24,7 +24,7 @@
   #panel{position:fixed;inset:0;z-index:41;display:none;align-items:center;
          justify-content:center;background:rgba(0,0,0,.78)}
   #panel .box{background:#131315;border:1px solid #333;border-radius:8px;
-              padding:22px 24px;width:min(760px,92vw);max-height:88vh;overflow:auto}
+              padding:22px 24px;width:min(760px,92%);max-height:88%;overflow:auto}
   #panel h3{margin:0;font-size:15px;font-weight:600;letter-spacing:.24em;color:#ddd}
   #panel .bar{display:flex;align-items:center;justify-content:space-between;
               border-bottom:1px solid #262628;padding-bottom:14px}
@@ -83,7 +83,7 @@
         opacity:0;transition:opacity 1.6s ease}
   #dark.on{opacity:1}
   #story{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:33;
-         max-width:min(620px,80vw);background:rgba(8,8,10,.82);border-left:2px solid #c0392b;
+         max-width:min(620px,80%);background:rgba(8,8,10,.82);border-left:2px solid #c0392b;
          padding:12px 16px;border-radius:4px;opacity:0;transition:opacity .45s;
          pointer-events:none;font-size:15px;letter-spacing:.02em}
   #story.on{opacity:1}
@@ -94,7 +94,7 @@
   /* 剧情里的二选一。故意压在字幕上面一点，让人先看完那句再选。
      和字幕同一套样式（左边一道红），看着是同一个"叙述层"的东西。 */
   #pick{position:fixed;left:50%;bottom:19%;transform:translateX(-50%);z-index:35;
-        display:none;flex-direction:column;gap:9px;min-width:min(430px,76vw)}
+        display:none;flex-direction:column;gap:9px;min-width:min(430px,76%)}
   #pick.on{display:flex}
   #pick button{font:15px inherit;color:#e6e6e6;background:rgba(8,8,10,.9);
                border:1px solid #3d3d45;border-left:2px solid #7b2b22;
@@ -123,7 +123,7 @@
           object-fit:contain;background:#000;opacity:0;transition:opacity .8s}
   #ending{position:fixed;inset:0;z-index:40;display:none;flex-direction:column;
           align-items:center;justify-content:center;background:#000;opacity:0;
-          transition:opacity 2s ease;padding:0 12vw;text-align:center}
+          transition:opacity 2s ease;padding:0 12%;text-align:center}
   #ending h2{font-size:22px;font-weight:600;letter-spacing:.3em;color:#c0392b;margin:0 0 22px}
   #ending p{font-size:16px;line-height:2.1;color:#ccc;max-width:640px;margin:0}
   #ending button{margin-top:34px;font:13px inherit;color:#ddd;background:#181818;
@@ -141,15 +141,15 @@
           border-radius:4px;font:inherit;line-height:1;
           transition:background .16s,border-color .16s,color .16s,opacity .16s}
   #photos .nav{top:50%;width:46px;height:78px;margin-top:-39px;font-size:30px}
-  #photos .nav.prev{left:2.2vw}
-  #photos .nav.next{right:2.2vw}
+  #photos .nav.prev{left:2.2%}
+  #photos .nav.next{right:2.2%}
   #photos .close{right:16px;top:44px;width:34px;height:34px;font-size:14px}
   #photos .nav:hover,#photos .close:hover{background:#1e1313;border-color:#c0392b;color:#fff}
   #photos .nav:disabled{opacity:.22;cursor:default;background:rgba(12,12,14,.4)}
-  #photos img{max-width:86vw;max-height:78vh;box-shadow:0 0 70px #000;
+  #photos img{max-width:86%;max-height:78%;box-shadow:0 0 70px #000;
               filter:contrast(1.04) saturate(.92)}
   #photos .cap{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);
-               max-width:min(700px,88vw);text-align:center;font-size:15px;line-height:1.95;
+               max-width:min(700px,88%);text-align:center;font-size:15px;line-height:1.95;
                color:#ddd;text-shadow:0 0 8px #000;letter-spacing:.02em}
   #photos .idx{position:absolute;right:18px;top:15px;font-size:12px;color:#666;
                font-family:ui-monospace,Consolas,monospace}
@@ -161,12 +161,15 @@
      transform-origin 定在屏幕的水平中心 + 图的底边：缩放时底边不动（所以小臂永远
      切在画框外，不会在右下角断成一截），而且放大不会让手机横向漂走。
      只动 transform（GPU 能插值），不动 right/bottom/width：那些一改就是跳变 */
-  #phone{position:fixed;right:-4vw;bottom:-8vh;width:min(430px,45vw);aspect-ratio:840/1259;
+  #phone{position:fixed;right:-4%;bottom:-8%;width:min(430px,45%);aspect-ratio:840/1259;
          z-index:30;cursor:pointer;pointer-events:auto;transform-origin:30.5% 100%;
          transform:translate(14%,56%) rotate(-15deg) scale(1);
          transition:transform .55s cubic-bezier(.2,1.14,.32,1),filter .5s;
          filter:drop-shadow(-12px -6px 30px rgba(0,0,0,.8)) brightness(.72)}
-  #phone.up{transform:translate(calc(-54vw + 69.5%),0) rotate(-3deg) scale(1.18);
+  /* 举到眼前那一下要横移半个屏幕。translate 里的百分比是按元素自身算的，
+     所以"半个屏幕"这一段只能给绝对长度：--half 由 JS 按当前画面宽度写（见 resize），
+     软件横屏时画面宽度不等于 vw，写死 54vw 就会横移不到位。 */
+  #phone.up{transform:translate(calc(69.5% - var(--half,54vw)),0) rotate(-3deg) scale(1.18);
             filter:drop-shadow(-16px -10px 38px rgba(0,0,0,.85)) brightness(1.02)}
   #phone:not(.up):hover{transform:translate(13%,50%) rotate(-14deg) scale(1.01)}
   /* 呼吸：手不会绝对静止。放在内层，跟外层的抬手 transform 互不覆盖 */
@@ -259,7 +262,7 @@
      等于把一间宽房子从一条缝里看——那不是布局问题，改不出来。 */
   #rotate{position:fixed;inset:0;z-index:60;display:none;flex-direction:column;
           align-items:center;justify-content:center;background:#000;text-align:center;
-          font-size:17px;letter-spacing:.08em;color:#ddd;padding:0 10vw}
+          font-size:17px;letter-spacing:.08em;color:#ddd;padding:0 10%}
   #rotate.on{display:flex}
   #rotate b{display:block;font-size:40px;line-height:1;margin-bottom:20px;color:#c0392b}
   #rotate span{display:block;margin-top:12px;font-size:13px;color:#888;letter-spacing:0}
@@ -284,25 +287,25 @@
   html.touch #app{cursor:default}
   html.touch #app,html.touch #app canvas{touch-action:none}   /* 别让系统把拖动吃成滚页/缩放 */
   html.touch #hud .dev{display:none}          /* 看接缝/记录热点那些是量图用的，手机上藏掉 */
-  html.touch #hud{left:8px;top:8px;padding:6px 9px;max-width:64vw;font-size:11px}
+  html.touch #hud{left:8px;top:8px;padding:6px 9px;max-width:64%;font-size:11px}
   html.touch #settings{padding:8px 13px;font-size:13px}
   @media (max-width:900px){
-    #story{bottom:6%;max-width:88vw;font-size:14px;padding:10px 13px}
-    #pick{bottom:16%;min-width:min(430px,88vw);gap:8px}
+    #story{bottom:6%;max-width:88%;font-size:14px;padding:10px 13px}
+    #pick{bottom:16%;min-width:min(430px,88%);gap:8px}
     #pick button{padding:14px 15px;font-size:14px}   /* 手指点得到：不小于 44px 高 */
     #photos .nav{width:42px;height:96px;margin-top:-48px;font-size:26px}
     #photos .nav.prev{left:8px}
     #photos .nav.next{right:8px}
     #photos .close{right:10px;top:52px;width:40px;height:40px}   /* 让开右上角那个"设置"（它的 z-index 更高） */
-    #photos img{max-width:92vw;max-height:64vh}
-    #photos .cap{bottom:3%;max-width:92vw;font-size:13px}
-    #ending{padding:0 7vw}
+    #photos img{max-width:92%;max-height:64%}
+    #photos .cap{bottom:3%;max-width:92%;font-size:13px}
+    #ending{padding:0 7%}
     #ending h2{font-size:18px;letter-spacing:.24em;margin-bottom:16px}
     #ending p{font-size:14px;line-height:1.95}
     #ending button{margin-top:24px;padding:10px 22px}
     #enter{font-size:16px}
     #enter span{font-size:12px}
-    #phone{width:min(430px,62vw)}
+    #phone{width:min(430px,62%)}
     #guide .txt{font-size:12px}
   }
 
@@ -1854,16 +1857,21 @@ function phoneAudio(on) {
   ramp(phoneChain.gain, on ? 0.95 : 0, on ? 0.4 : 0.25);
 }
 // ——— 举起之后的第二段动作：把屏幕推到画面正中放大 ———
-// 这些数字必须跟上面的 CSS 对齐：transform-origin 30.5%/100%、右下角 -4vw/-8vh、
-// 宽 min(430px,45vw)、机身 840x1259、屏幕 left10.1 top1.9 w39.8 h55.7。
+// 机身的位置和大小直接问 DOM，不再照着 CSS 里的数字重算一遍：
+// 以前这里写死 min(430px,45vw) + 右下角 -4vw/-8vh，结果手机端把宽度调大到 62vw 之后
+// 两边就对不上了，那段录像不在画面正中（软件横屏时 vw 指的还是物理屏，差得更多）。
+// offset* 是布局值，不受元素自身 transform 影响，坐标系正好是 body 那一套（也就是 vW/vH）。
+// 只剩这几个比例还得跟 CSS 对齐：transform-origin 30.5%/100%、机身 840x1259、
+// 屏幕 left10.1 top1.9 w39.8 h55.7、机身倾角 1.47 度。
 // 缩放是绕 origin 做的，而屏幕中心不在 origin 上，所以位移要反解出来，否则会飞出画面。
 const PH_BD = document.getElementById('phone-bd');
 const PH_O = [0.305, 1.0], PH_SCR = {l: .101, t: .019, w: .398, h: .557}, PH_TILT = -1.47;
+const phoneBox = () => ({bw: phoneEl.offsetWidth, bh: phoneEl.offsetHeight,
+                         left: phoneEl.offsetLeft, top: phoneEl.offsetTop});
 let zoomOn = false, zoomT = null;
 function zoomTransform() {
   const W = vW(), H = vH();
-  const bw = Math.min(430, W * 0.45), bh = bw * 1259 / 840;
-  const left = W * 1.04 - bw, top = H * 1.08 - bh;
+  const {bw, bh, left, top} = phoneBox();
   const ox = left + PH_O[0] * bw, oy = top + PH_O[1] * bh;
   const cx = left + (PH_SCR.l + PH_SCR.w / 2) * bw, cy = top + (PH_SCR.t + PH_SCR.h / 2) * bh;
   // 屏幕又高又窄（比例约 0.48），所以基本是按高度撑满，宽度那条只是防止极端窗口下溢出
@@ -1902,7 +1910,7 @@ let callOn = false;
 let holdCall = false;
 function layoutCall() {
   const W = vW(), H = vH();
-  const bw = Math.min(430, W * 0.45), bh = bw * 1259 / 840;
+  const {bw, bh} = phoneBox();
   const z = zoomTransform();
   const w = PH_SCR.w * bw * z.k, h = PH_SCR.h * bh * z.k;
   callEl.style.width = w.toFixed(1) + 'px';
@@ -3399,6 +3407,10 @@ function resize() {
   }
   camera.aspect = vW() / vH();
   renderer.setSize(vW(), vH());
+  // 举手机那一下要横移"半个屏幕"，而 CSS 的 vw 在软件横屏时说的还是物理屏，
+  // 所以这个长度由这里按当前画面宽度写进去（见 #phone.up）。
+  document.body.style.setProperty('--half', vW() * 0.54 + 'px');
+  if (zoomOn) { applyZoom(); if (callOn) layoutCall(); }   // 画面尺寸变了，放大那一下要重算
   // 竖屏劝横屏。相机的垂直 fov 锁死 75，竖屏时水平视野只剩四十来度，
   // 一间房子只能从一条缝里看——这不是布局能救的，所以直接盖一层让人转手机
   //（转不过来的可以点那层上的"强制横屏"，见 forceLandscape）。
