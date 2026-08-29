@@ -308,6 +308,35 @@
     #phone{width:min(430px,62%)}
     #guide .txt{font-size:12px}
   }
+  /* 矮屏（横过来的手机只有三百多像素高）的设置弹窗。
+     不用 @media (max-height)：软件横屏时媒体查询看的是转之前那块竖屏，高度会是 844，
+     完全对不上。所以由 JS 按"画面真正的高度"（vH）打 html.short 这个标记，见 resize。
+     要点：盒子改成 border-box（不然 max-height 不含那 22px 内边距，正好顶满一屏）、
+     标题栏和"重新开始/关闭"永远留在视野里、只让存档格子那一块滚。 */
+  html.short #panel{padding:10px}
+  html.short #panel .box{box-sizing:border-box;width:100%;max-height:100%;
+                         padding:12px 14px;display:flex;flex-direction:column;overflow:hidden}
+  html.short #panel .bar{padding-bottom:10px}
+  html.short #panel h3{font-size:14px;letter-spacing:.16em}
+  html.short #panel .bar button{padding:8px 12px}
+  html.short #panel .lbl{margin:11px 0 7px}
+  /* 矮屏上六格改成一排。三列两排的话每格要一百六十多像素高，两排放不下就被切掉
+     （之前那版存档名和"空"字就是这么没了）。一排六格反而宽度够、还不用滚。
+     align-content:start 是必须的：不然行高会被压到比内容还矮，底下那行字直接被裁。 */
+  html.short #panel .grid{grid-template-columns:repeat(6,1fr);gap:8px;
+                          align-content:start;overflow:auto;flex:1 1 auto;min-height:0}
+  html.short .slot .shot,html.short .slot .empty{aspect-ratio:16/9}
+  html.short .slot .empty{font-size:20px}
+  html.short .slot .meta{padding:5px 7px;font-size:10px;line-height:1.5}
+  html.short .slot .meta b{font-size:11px}
+  html.short .slot .del{padding:1px 5px}
+  html.short #panel .tip{margin-top:9px;font-size:10px;line-height:1.65;flex:0 0 auto}
+  /* 确认框和结局卡在矮屏上也收一收 */
+  html.short #confirm .box{padding:16px 18px}
+  html.short #confirm .row{margin-top:14px}
+  html.short #ending h2{font-size:16px;margin-bottom:12px}
+  html.short #ending p{font-size:13px;line-height:1.85}
+  html.short #ending button{margin-top:16px}
 
 
 
@@ -3410,6 +3439,9 @@ function resize() {
   // 举手机那一下要横移"半个屏幕"，而 CSS 的 vw 在软件横屏时说的还是物理屏，
   // 所以这个长度由这里按当前画面宽度写进去（见 #phone.up）。
   document.body.style.setProperty('--half', vW() * 0.54 + 'px');
+  // 画面真正的高度（软件横屏时不等于 innerHeight）。矮屏要换一套设置弹窗的排版，
+  // 而媒体查询在软件横屏下看错了边，所以这个标记只能由 JS 打。
+  document.documentElement.classList.toggle('short', vH() <= 560);
   if (zoomOn) { applyZoom(); if (callOn) layoutCall(); }   // 画面尺寸变了，放大那一下要重算
   // 竖屏劝横屏。相机的垂直 fov 锁死 75，竖屏时水平视野只剩四十来度，
   // 一间房子只能从一条缝里看——这不是布局能救的，所以直接盖一层让人转手机
