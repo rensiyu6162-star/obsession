@@ -3524,13 +3524,22 @@ function frame() {
 const gDir = new THREE.Vector3();
 function drawGuide() {
   const g = GUIDE[gStep];
-  if (!g || walking || photoIdx >= 0 || !locked || phoneUp) { guideEl.style.display = 'none'; return; }
+  // 手机上永远拿不到鼠标锁，所以"还没进游戏"不能再用 !locked 判断，
+  // 改看那层"点击进入"还在不在——不然引导箭头在手机上一次都不会出现。
+  const notReady = TOUCH ? enterEl.style.display !== 'none' : !locked;
+  if (!g || walking || photoIdx >= 0 || notReady || phoneUp) { guideEl.style.display = 'none'; return; }
   const arw = guideEl.querySelector('.arw'), txt = guideEl.querySelector('.txt');
   if (g.id === 'phone') {
+    // getBoundingClientRect 给的是物理屏坐标，而 guideEl 在转过的 body 里面，
+    // 所以软件横屏时要把它换算回虚拟坐标：两个对角各映射一次再取 min/max，
+    // 这样顺时针、逆时针、不转三种情况都对（rot90 关着时 vx/vy 原样返回）。
     const r = phoneEl.getBoundingClientRect();
+    const p0 = {clientX: r.left, clientY: r.top}, p1 = {clientX: r.right, clientY: r.bottom};
+    const gx = (Math.min(vx(p0), vx(p1)) + Math.max(vx(p0), vx(p1))) / 2;
+    const gy = Math.min(vy(p0), vy(p1));
     guideEl.style.display = 'block';
-    guideEl.style.left = r.left + r.width * 0.5 + 'px';
-    guideEl.style.top = Math.max(60, r.top - 46) + 'px';
+    guideEl.style.left = gx + 'px';
+    guideEl.style.top = Math.max(60, gy - 46) + 'px';
     arw.textContent = '▼';
     arw.style.transform = '';
     txt.textContent = g.tip;
