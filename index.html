@@ -715,21 +715,20 @@ const NODES = {
     ],
   },
 };
-// 结局：每次交互后从上往下匹配，第一个成立的生效
-const ENDINGS = [
-  {id:'observer', if: () => has('foundCamera') && has('mirrorLit') && has('tvFigure'),
-   title:'观 察 者',
-   text:'你终于把三样东西摆到了一起：对着床的镜头、镜子里没关的灯、雪花里那个只在黑暗中出现的人形。它们不是在监视你。它们是在回放。你早就不住这里了，剩下的只是这间屋子还记得你的样子，一遍一遍地演。'},
-  {id:'tenant', if: () => has('lockedIn') && has('otherName') && S.dread >= 5,
-   title:'房 客',
-   text:'信上的名字你念了很多遍，念到它开始像自己的名字。门从里面锁着五道，因为你从来没打算出去——你只是想弄清楚，在你搬进来之前，是谁把这些照片贴上墙的。'},
-  {id:'dark', if: () => S.dread >= 9,
-   title:'关 灯',
-   text:'你把每一间屋子的灯都关掉了。黑暗里雨声变得很大，大得像有人贴在你身后呼吸。你没有回头，因为回头就得承认那不是雨。'},
+// 夜里这三条不再是结局，改成"看透了一件事"的旁白（见 afterBeat）。
+// 原来它们是三张结局卡，谁先成立谁收口——问题是它们太容易撞上：关灯每关一次 +1 不安，
+// 来回按几下灯就能凑到"关灯"那张卡，玩家还在第一间屋子里摸索就被判了终局。
+// 现在改成：点灯、点摄像机、点电视都只是互动，剧情不会因为这些停下来；
+// 三种组合各给一句压得很重的旁白，一次性，说完接着玩。整局真正的收口在周六那几张卡。
+const NIGHT_BEATS = [
+  {id: 'observer', if: () => has('foundCamera') && has('mirrorLit') && has('tvFigure'),
+   text: '对着床的镜头、镜子里那盏没关的灯、雪花里那个人形——它们不是在监视你。它们是在回放。'},
+  {id: 'tenant', if: () => has('lockedIn') && has('otherName') && S.dread >= 5,
+   text: '信上那个名字你已经念得像自己的名字了。门从里面锁着五道——因为你从来没打算出去。'},
+  {id: 'dark', if: () => NODES.living.off && NODES.bedroom.off,
+   text: '每一间屋子的灯都关掉了。黑暗里雨声大得像有人贴在你身后呼吸。你没有回头。'},
 ];
-// 周六这一章的结局不走上面那张表：afterBeat() 里有 `if (S.day) return`，
-// 白天永远不扫 ENDINGS（当初就是为了不让夜里这三个结局跑出来抢戏）。
-// 所以这一个由剧情自己在结尾直接 showEnding()。
+// 真正的结局卡都是剧情自己在该收口的地方直接 showEnding() 的（夜里那三条已经不收口了）。
 const END_BEDSIDE = {
   id: 'bedside',
   title: '靠 墙 那 一 侧',
@@ -2244,7 +2243,8 @@ app.addEventListener('click', e => {
     const n = NODES[node];
     n.off = 1 - n.off;                                  // 灯的状态记在节点上，各房间独立
     h.el.textContent = h.label = n.off ? '开灯' : '关灯';
-    if (n.off) { S.dread += 1; mark('turnedOff_' + node); }
+    // 不安值只给第一次关灯：以前来回按灯每次都 +1，按上十下就能把不安刷满
+    if (n.off && !has('turnedOff_' + node)) { S.dread += 1; mark('turnedOff_' + node); }
     blip('click');
     applyAudioProfile();
     say(n.off ? '啪。黑暗里雨声忽然变大了。' : '灯又亮起来。', 3000);
@@ -3243,8 +3243,16 @@ function afterBeat() {
   buildSpots(node);
   save();
   if (S.day) return;
-  for (const e of ENDINGS) {
-    if (e.if()) { showEnding(e); return; }
+  // 夜里那三条组合只给一句旁白，不再收口。正在过台词的时候不插嘴——
+  // 那句会把人家的字幕顶掉（sceneBusy 见 callScene）。
+  if (sceneBusy > 0) return;
+  for (const e of NIGHT_BEATS) {
+    if (has('beat_' + e.id) || !e.if()) continue;
+    mark('beat_' + e.id);
+    blip('sting');
+    say(e.text, 6200);
+    save();
+    return;
   }
 }
 function showEnding(e) {
