@@ -1975,6 +1975,7 @@ function layoutCall() {
 function showCall() {
   callOn = true;
   callEl.classList.remove('calling');
+  callEl.classList.remove('locked');
   callImg.src = 'images/phone-ui-contacts.jpg';
   layoutCall();
   callEl.style.display = 'block';
@@ -2072,45 +2073,35 @@ async function callScene(steps) {
     sceneBusy--;
   }
 }
+// 点 Sarah 不进通话界面。闺蜜线没做，进去了就只能不声不响地断在那儿——
+// 那看着像 bug。改成留在通讯录上给一句说明，通讯录不收、Jude 还在上面等着点，
+// 玩家只能走 Jude 这条线，周六线不会被一通打不通的电话卡住。
+function sarahWIP() {
+  blip('note');
+  say('——闺蜜线剧情尚在开发中，敬请期待。先打给 Jude。', 4200);
+}
 function doCall(who) {
-  // 不收界面，换成"通话中"那张：Jude 用图 2，Sarah 用图 3
+  if (who !== 'jude') { sarahWIP(); return; }
+  // 不收界面，换成"通话中"那张
   callEl.classList.add('calling');
-  callEl.classList.toggle('locked', who === 'jude');   // 光标变成"点不动"
-  holdCall = who === 'jude';
-  callImg.src = who === 'jude' ? 'images/phone-ui-jude.jpg' : 'images/phone-ui-sarah.jpg';
-  if (who === 'jude') {
-    callScene([
-      {d: 3.2, t: '拨出去了。响一声，两声——', f: () => blip('ring')},
-      {d: 4.0, t: '被掐断了。他挂得比铃声还快。', f: () => blip('hangup')},
-      {d: 6.2, t: '你往上翻通话记录：Jude，未接通。再往上，还是 Jude，未接通。'
-                + '你数到第四十七条就不数了。',
-        f: () => { S.dread += 3; mark('calledJude'); }},
-      {d: 3.4, t: '你又拨了一遍。这次通了。', f: () => blip('ring')},
-      // 这三句是英文配音（audio/jude-1、her-1、jude-2），字幕是中文
-      {a: 'jude-1', d: 3.6, who: 'Jude', t: '「别打给我了。再打我就拉黑你。」'},
-      {a: 'her-1', d: 5.4, who: '你', t: '「我的一些东西还在你那里，周六方便见一面拿给我吗。」'},
-      {d: 2.2, t: '听筒里没有声音。两秒。'},
-      {a: 'jude-2', d: 2.0, who: 'Jude', t: '「行。」', f: () => mark('saturday')},
-      {d: 4.6, t: '他先挂的。你把手机从耳边拿下来，屏幕上还亮着他的名字。周六。'},
-      {d: 1.0, f: toDay},
-    ]);
-  } else {
-    callScene([
-      {d: 4.4, t: '响到第四声，她接了。', f: () => blip('ring')},
-      {who: 'Sarah', d: 3.6, t: '「喂？这么晚——你还没睡？」'},
-      {d: 3.8, t: '你说你在他家里。Sarah 那边安静了一下。'},
-      {who: 'Sarah', d: 3.6, t: '「他不是三个月前就搬走了吗。」'},
-      {d: 2.8, t: '她的声音压低了。'},
-      {who: 'Sarah', d: 4.6, t: '「那你现在……在谁家里？」',
-        f: () => { S.dread += 2; mark('calledSarah'); }},
-      // 这条线到这儿就断了：往下是闺蜜线，还没做。与其让电话不声不响地挂掉
-      // （看着像 bug），不如跳出剧情说一句实话，再把手机放下去。
-      // 放下之后还能再举起来打给 Jude，周六那条线不会因为先打了她而走不了。
-      {d: 6.2, t: '——闺蜜线剧情尚在开发中，敬请期待。',
-        f: () => blip('note')},
-      {d: 3.6, t: '你把手机从耳边拿下来。这通电话你没想好怎么说下去。'},
-    ]);
-  }
+  callEl.classList.add('locked');   // 光标变成"点不动"
+  holdCall = true;
+  callImg.src = 'images/phone-ui-jude.jpg';
+  callScene([
+    {d: 3.2, t: '拨出去了。响一声，两声——', f: () => blip('ring')},
+    {d: 4.0, t: '被掐断了。他挂得比铃声还快。', f: () => blip('hangup')},
+    {d: 6.2, t: '你往上翻通话记录：Jude，未接通。再往上，还是 Jude，未接通。'
+              + '你数到第四十七条就不数了。',
+      f: () => { S.dread += 3; mark('calledJude'); }},
+    {d: 3.4, t: '你又拨了一遍。这次通了。', f: () => blip('ring')},
+    // 这三句是英文配音（audio/jude-1、her-1、jude-2），字幕是中文
+    {a: 'jude-1', d: 3.6, who: 'Jude', t: '「别打给我了。再打我就拉黑你。」'},
+    {a: 'her-1', d: 5.4, who: '你', t: '「我的一些东西还在你那里，周六方便见一面拿给我吗。」'},
+    {d: 2.2, t: '听筒里没有声音。两秒。'},
+    {a: 'jude-2', d: 2.0, who: 'Jude', t: '「行。」', f: () => mark('saturday')},
+    {d: 4.6, t: '他先挂的。你把手机从耳边拿下来，屏幕上还亮着他的名字。周六。'},
+    {d: 1.0, f: toDay},
+  ]);
 }
 callEl.addEventListener('click', e => {
   e.stopPropagation();
