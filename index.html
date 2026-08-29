@@ -2127,12 +2127,24 @@ callEl.addEventListener('click', e => {
   const hot = e.target.closest('.hot');
   if (hot) doCall(hot.dataset.who);
 });
-// 录像放完就自动把手机放下，不循环——"放完这段"就是这一遍
-
+// 那段十五秒的录像必须看完：放的时候手机放不下来（点画面、点手机、按 F 都不行），
+// 放完了才自动进通讯录——那两个号码是整条周六线的入口，中途把手机垂下去就等于
+// 把这一段跳过了，而这一段本来就是"她一次都没关掉过它"这件事本身。
+// 只有一种情况不锁：浏览器根本没让它播（play() 被拒、解码失败、没数据）。
+// 那时候 ended 永远不会来，锁着就把人卡在举手机的画面里了。
+const vidLocked = () => phoneUp && !phoneVid.ended && !phoneVid.paused && !phoneVid.error;
+function lowerPhone() {
+  if (vidLocked()) {
+    blip('note');
+    say('你的手没有放下来。这十五秒你从来没有中途关掉过。', 3200);
+    return;
+  }
+  setPhone(false);
+}
 phoneVid.addEventListener('ended', () => {
   if (!phoneUp) return;
-  if (zoomOn) showCall();              // 放完不收手机，改成给你两个号码
-  else setPhone(false);
+  if (!zoomOn) phoneZoom(true);        // 正常流程里早就推近了，这一句只是兜底
+  showCall();                          // 放完不收手机，改成给你两个号码
 });
 function setPhone(up) {
   if (up === phoneUp) return;
@@ -2161,8 +2173,8 @@ function togglePhone() {
   if (callOn) return;                // 拨号界面开着的时候，只能从两个名字里选一个
   if (!phoneUp && !phoneAvail()) return;   // 这个场景没有手机可举
   initAudio(); AC?.resume();         // 举手机这一下本身就是用户手势，够资格出声
-  setPhone(!phoneUp);
-  if (!phoneUp) return;
+  if (phoneUp) { lowerPhone(); return; }   // 放的时候放不下来（见 vidLocked）
+  setPhone(true);
   guideDone('phone');
   if (!S.seen.phone) { S.seen.phone = true; S.dread += 2; mark('sawPhone'); }
   say('你自己的手机。屏幕上是他走进那扇门的背影，十五秒。你没有关掉过它。', 6500);
@@ -2217,8 +2229,9 @@ app.addEventListener('click', e => {
   if (walking) return;
   // 拨号界面开着：这时候只认那两个名字，点空白处不算数
   if (callOn) return;
-  // 手机举着的时候画面被那段录像占满了，随便点一下就是放下手机、回到房间
-  if (phoneUp) { setPhone(false); return; }
+  // 手机举着的时候画面被那段录像占满了，随便点一下就是放下手机、回到房间——
+  // 但录像放完之前放不下来（lowerPhone 里那道闸）
+  if (phoneUp) { lowerPhone(); return; }
   if (calib) { calibClick(); return; }
   // 引导正指向手机时，准星没对上任何东西的那一下就算点手机。
   // 锁定鼠标之后 DOM 元素收不到 click（事件全给锁定目标），只能这样接。
