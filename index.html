@@ -551,17 +551,28 @@ const NODES = {
       {u:0.300, v:0.245, label:'那扇门', id:'hisdoor', dread:1, if: () => !has('heLeft'),
        text:'门是半开的。他进去之后不会锁——他从来不锁。',
        on: () => mark('doorOpen')},
-      // 他走了之后同一个位置换成"能进去"的门。坐标是对着 -empty 那张量的
-      {u:0.315, v:0.345, label:'进他家', id:'hisdoor2', if: () => has('heLeft') && !has('outOfBed'),
+      // 他走了之后同一个位置换成"能进去"的门。坐标是对着 -empty 那张量的。
+      // 第二章周二那一趟也走这一个（那时候 outOfBed 早就立了，所以要放 ch2Back 这个口子），
+      // 不然从街上回不去他家，第二章后半就断在门外了。
+      {u:0.315, v:0.345, label:'进他家', id:'hisdoor2',
+       if: () => has('heLeft') && (!has('outOfBed') || has('ch2Back')),
        to:'hishouse', arrive:0.02,
-       text:'门没锁。你早就知道他不锁门。'},
+       text: () => has('ch2Back')
+         ? '门还是没锁。这栋房子里只有这一件事是不变的。'
+         : '门没锁。你早就知道他不锁门。'},
       // "手机没掏出来"那一支：她从他家走出来之后才有这一个。隔壁那户临街的窗户，
       // 玻璃里面贴着一张 A4 的出租启事——全景图这个分辨率上那张纸看不出字，
       // 字交给贴片（PLATE_TOLET）。坐标是对着 -empty / -dusk 那两张量的（隔壁那户的
       // 一楼窗户，紧挨着他家那面凸窗的右边）。这一个给大一点的判定圈：
       // 整条支线就靠它推进，不该让人对着准星找半天。
+      // 进了第二章就撤掉：那张纸是她自己揭下来的，那户现在是她租的（见 ndwin1）。
       {u:0.505, v:0.398, label:'邻居家的窗户', id:'tolet', action:'tolet', size:0.30,
-       if: () => has('outOfBed')},
+       if: () => has('outOfBed') && !has('ch2')},
+      // 第二章：隔壁那户现在是她自己的。出门、回家都走这一道门——就在那扇窗底下的台阶上。
+      // 没有这一个，第二章一出门就回不去了（他家那道门这时候是进不去的）。
+      {u:0.500, v:0.452, label:'回自己家', id:'ndhome', size:0.28, if: () => has('ch2'),
+       to:'ndliving', arrive:0.913,
+       text:'你自己的门。钥匙在你口袋里——这一户是你租的，租金你付得起。'},
     ],
   },
   // 门里面。他不在家，你有整个晚上。
@@ -672,8 +683,9 @@ const NODES = {
        text:'一个纸箱，上面搁着两把钥匙。中介说得很轻松：上一个房客走得急。'},
       {u:0.527, v:0.474, label:'窗户', id:'ndwin1',
        text:'那张"待租"的纸从里面被你揭下来了。玻璃上还留着四个胶印。'},
-      {u:0.913, v:0.507, label:'门', id:'nddoor1',
-       text:'你的门。跟他家那道门中间隔着一道砖墙，两扇门只差三步。'},
+      {u:0.913, v:0.507, label:'出门', id:'nddoor1',
+       to:'outside', arrive:0.500, pano: PANO_OUT_DUSK,
+       text:'你自己的门。跟他家那道门中间隔着一道砖墙，两扇门只差三步。'},
       {u:0.163, v:0.485, label:'楼上', id:'ndup', to:'ndbed', arrive:0.107,
        text:'楼梯在这一侧——他家的在另一侧。这栋房子是照着镜子盖的。'},
     ],
@@ -1691,7 +1703,7 @@ function enterNode(name, spot) {
   walkMs = WALK_MS * THREE.MathUtils.clamp(walkFrom.distanceTo(walkDest) / WALK_L, 0.45, 1);
   fovTarget = 84;                                           // 走动时视野略开，像人往前探身
   walkT0 = performance.now();
-  say(spot.text, 3600);
+  say(typeof spot.text === 'function' ? spot.text() : spot.text, 3600);
   blip('whoosh');
   stepAt = walkT0 + 120;                                    // 过门时踩三四步
 }
@@ -1810,16 +1822,24 @@ function guideDone(id) {
 // 那个 X。tip 形如"点击某物"的可以省掉 what，掐掉"点击"两个字正好就是名词。
 function guideFor(n) {
   // 第二章 · 隔壁：她自己租的那一户，路线是 楼下 → 楼上 → 那面墙 → 凹坑 → 洞
-  if (n === 'ndliving') return has('ndBedIn') ? [] : [{id: 'ndup', tip: '上楼', what: '楼梯'}];
+  // 楼下这一层只要那个洞还没看完就一直指楼上（从街上回来、从楼上下来都算），
+  // 看完了就撤——那之后楼下没有任何该做的事。
+  if (n === 'ndliving') return has('peeped2') ? [] : [{id: 'ndup', tip: '上楼', what: '楼梯'}];
   if (n === 'ndbed') {
     if (!has('sawDent')) return [{id: 'ndwall', tip: '点击那面墙', what: '那面空墙'}];
     if (!has('holeOpen')) return [{id: 'nddent', tip: '拿电钻钻开它', what: '墙脚那个凹坑'}];
     if (!has('peeped2')) return [{id: 'ndhole', tip: '凑上去看', what: '墙上那个洞'}];
     return [];
   }
+  // 第二章里跑到街上去了：周二之前指回自己家那道门（他家这时候进不去），
+  // 周二之后指他家那道门（下面 ch2Back 那一段管）。
+  if (has('ch2') && !has('ch2Back') && n === 'outside') {
+    return [{id: 'ndhome', tip: '回自己家', what: '你自己那道门'}];
+  }
   // 第二章后半：周二又回到他家。这一段要压在 outOfBed 那一支前面，
   // 不然 hisbed 会被指去"下楼"（那是第一章那条支线的收尾）。
   if (has('ch2Back')) {
+    if (n === 'outside') return [{id: 'hisdoor2', tip: '点击那扇门'}];
     if (n === 'hishouse') return [{id: 'hisstairs', tip: '上楼', what: '楼梯'}];
     if (n === 'hisbed') return has('ch2Under')
       ? []
@@ -2027,22 +2047,31 @@ function waitStep(ms) {
     const t2 = setTimeout(() => { if (!done) stepSkip = fin; }, Math.min(320, ms));
   });
 }
+// 有没有正在走的台词段。引导箭头靠它判断"现在是不是该让玩家点东西"（见 drawGuide）。
+// 用计数而不是布尔：一段还没走完就被下一段顶掉（sceneId 变了）的情况是有的，
+// 那一段自己的 finally 会把自己的那一笔减掉，不会把别人的状态擦了。
+let sceneBusy = 0;
 async function callScene(steps) {
   const my = ++sceneId;
-  for (const st of steps) {
+  sceneBusy++;
+  try {
+    for (const st of steps) {
+      if (my !== sceneId) return;
+      const d = st.a ? await vox(st.a) : 0;
+      if (my !== sceneId) return;
+      const wait = Math.max(st.d || 0, d ? d + 0.6 : 0, 1.2);
+      if (st.t) say(st.t, Math.max(2200, wait * 1000), st.who);
+      st.f?.();
+      // 跳过一句有配音的（尖叫、Jude 那几句），声音得跟着收掉，
+      // 不然它会压到下一句字幕上去。0.18 秒淡出，不是硬切，听不出咔哒。
+      if (await waitStep(wait * 1000) === 'skip' && st.a) stopVox(0.18);
+    }
     if (my !== sceneId) return;
-    const d = st.a ? await vox(st.a) : 0;
-    if (my !== sceneId) return;
-    const wait = Math.max(st.d || 0, d ? d + 0.6 : 0, 1.2);
-    if (st.t) say(st.t, Math.max(2200, wait * 1000), st.who);
-    st.f?.();
-    // 跳过一句有配音的（尖叫、Jude 那几句），声音得跟着收掉，
-    // 不然它会压到下一句字幕上去。0.18 秒淡出，不是硬切，听不出咔哒。
-    if (await waitStep(wait * 1000) === 'skip' && st.a) stopVox(0.18);
+    setPhone(false);
+    afterBeat();
+  } finally {
+    sceneBusy--;
   }
-  if (my !== sceneId) return;
-  setPhone(false);
-  afterBeat();
 }
 function doCall(who) {
   // 不收界面，换成"通话中"那张：Jude 用图 2，Sarah 用图 3
@@ -3610,7 +3639,15 @@ function drawGuide() {
   // 手机上永远拿不到鼠标锁，所以"还没进游戏"不能再用 !locked 判断，
   // 改看那层"点击进入"还在不在——不然引导箭头在手机上一次都不会出现。
   const notReady = TOUCH ? enterEl.style.display !== 'none' : !locked;
-  if (!g || walking || photoIdx >= 0 || notReady || phoneUp) { guideEl.style.display = 'none'; return; }
+  // 演出期间不指引：正在过台词（sceneBusy）、屏幕上盖着贴片、或者正在等玩家选项，
+  // 这几种时候玩家该做的事是看和读，不是去点那个热点。
+  // 以前只挡 walking，结果一整段对话里箭头一直在那儿抖，看着像"还得再点一下"。
+  const inScene = sceneBusy > 0 || plateEl.classList.contains('on')
+                  || pickEl.classList.contains('on');
+  if (!g || walking || photoIdx >= 0 || notReady || phoneUp || inScene) {
+    guideEl.style.display = 'none';
+    return;
+  }
   const arw = guideEl.querySelector('.arw'), txt = guideEl.querySelector('.txt');
   if (g.id === 'phone') {
     // getBoundingClientRect 给的是物理屏坐标，而 guideEl 在转过的 body 里面，
