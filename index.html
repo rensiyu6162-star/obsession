@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>全景节点测试 · 痴迷</title>
 <style>
-  html,body{margin:0;height:100%;background:#000;overflow:hidden;color:#ddd;
+  html,body{margin:0;height:100%;height:100dvh;background:#000;overflow:hidden;color:#ddd;
             font:13px/1.6 system-ui,"Microsoft YaHei",sans-serif}
   #app{position:fixed;inset:0;cursor:grab}
   #app.dragging{cursor:grabbing}
@@ -252,6 +252,44 @@
   #guide .txt{margin-top:2px;font-size:13px;letter-spacing:.04em;white-space:nowrap}
   @keyframes gbob{0%,100%{transform:translateY(0)}50%{transform:translateY(7px)}}
 
+  /* ——— 手机端 ———
+     手机上没有 Pointer Lock，所以整套操作换成：单指拖动环视、双指捏合缩放、
+     点一下就是"点这里"（准心自然消失，raycast 直接用手指坐标）。
+     竖屏不做适配而是劝横屏：相机的垂直 fov 锁死 75，竖屏时水平视野只剩四十来度，
+     等于把一间宽房子从一条缝里看——那不是布局问题，改不出来。 */
+  #rotate{position:fixed;inset:0;z-index:60;display:none;flex-direction:column;
+          align-items:center;justify-content:center;background:#000;text-align:center;
+          font-size:17px;letter-spacing:.08em;color:#ddd;padding:0 10vw}
+  #rotate.on{display:flex}
+  #rotate b{display:block;font-size:40px;line-height:1;margin-bottom:20px;color:#c0392b}
+  #rotate span{display:block;margin-top:12px;font-size:13px;color:#888;letter-spacing:0}
+  html.touch,html.touch body{touch-action:none;overscroll-behavior:none;
+       -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  html.touch #app{cursor:default}
+  html.touch #app,html.touch #app canvas{touch-action:none}   /* 别让系统把拖动吃成滚页/缩放 */
+  html.touch #hud .dev{display:none}          /* 看接缝/记录热点那些是量图用的，手机上藏掉 */
+  html.touch #hud{left:8px;top:8px;padding:6px 9px;max-width:64vw;font-size:11px}
+  html.touch #settings{padding:8px 13px;font-size:13px}
+  @media (max-width:900px){
+    #story{bottom:6%;max-width:88vw;font-size:14px;padding:10px 13px}
+    #pick{bottom:16%;min-width:min(430px,88vw);gap:8px}
+    #pick button{padding:14px 15px;font-size:14px}   /* 手指点得到：不小于 44px 高 */
+    #photos .nav{width:42px;height:96px;margin-top:-48px;font-size:26px}
+    #photos .nav.prev{left:8px}
+    #photos .nav.next{right:8px}
+    #photos .close{right:10px;top:52px;width:40px;height:40px}   /* 让开右上角那个"设置"（它的 z-index 更高） */
+    #photos img{max-width:92vw;max-height:64vh}
+    #photos .cap{bottom:3%;max-width:92vw;font-size:13px}
+    #ending{padding:0 7vw}
+    #ending h2{font-size:18px;letter-spacing:.24em;margin-bottom:16px}
+    #ending p{font-size:14px;line-height:1.95}
+    #ending button{margin-top:24px;padding:10px 22px}
+    #enter{font-size:16px}
+    #enter span{font-size:12px}
+    #phone{width:min(430px,62vw)}
+    #guide .txt{font-size:12px}
+  }
+
 
 
 
@@ -262,16 +300,18 @@
 <div id="app"></div>
 <div id="crosshair"></div>
 <div id="hud">
+  <div class="dev">
   <button id="btn-seam">看接缝</button><button id="btn-up">看天顶</button
   ><button id="btn-down">看地面</button><button id="btn-mark">记录热点</button>
   <div id="coord">—</div>
-  <div style="color:#888;margin-top:2px">拖动转视角 · 滚轮缩放 · WASD 微幅探身 · 看着门按住 W 走进去 · F 举起手机 · C 标定 · M 静音</div>
-
+  </div>
+  <div class="tip" style="color:#888;margin-top:2px">拖动转视角 · 滚轮缩放 · WASD 微幅探身 · 看着门按住 W 走进去 · F 举起手机 · C 标定 · M 静音</div>
 
 
 
 
 </div>
+<div id="rotate"><b>⟳</b>把手机横过来<span>这一间屋子是宽的，竖着看只能看见一条缝</span></div>
 <div id="dark"></div>
 <div id="story"></div>
 <div id="pick"></div>
@@ -699,6 +739,17 @@ const storyEl = document.getElementById('story');
 const enterEl = document.getElementById('enter');
 const crossEl = document.getElementById('crosshair');
 const endEl = document.getElementById('ending');
+// 手机/平板。判定用"指针是粗的"而不是屏幕宽度——窄窗口的桌面浏览器仍然该走鼠标那一套。
+// 这个标记决定三件事：不再申请 Pointer Lock（手机上根本没有）、
+// 那层"点击进入"点一下就永久收掉、以及竖屏时弹劝横屏的遮罩。
+const TOUCH = matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 0;
+const rotateEl = document.getElementById('rotate');
+if (TOUCH) {
+  document.documentElement.classList.add('touch');
+  document.querySelector('#hud .tip').textContent =
+    '单指拖动环视 · 双指捏合缩放 · 点热点交互 · 点空白处加速对话';
+  enterEl.innerHTML = '点击进入<span>单指拖动环视 · 双指捏合缩放 · 直接点画面里的东西</span>';
+}
 
 // ——— 声音：全部用 Web Audio 现场合成，不依赖任何音频文件 ———
 // 雨 = 白噪声过带通+低通；房间嗡鸣 = 两个失谐正弦；脚步/开关/风声 = 噪声包络。
@@ -1076,7 +1127,7 @@ function tvAudio(on) {
 
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.5 : 2));
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -1465,7 +1516,19 @@ let locked = false;
 const SENS = 0.12;          // 度/像素，锁定状态下的灵敏度
 const INVERT_Y = false;
 const wrap1 = x => ((x % 1) + 1) % 1;
-enterEl.addEventListener('click', () => { initAudio(); AC?.resume(); app.requestPointerLock(); });
+// 那层"点击进入"：桌面上点了去申请鼠标锁；手机上没有 Pointer Lock，
+// 点一下只做两件事——把音频上下文唤醒（iOS 必须有这一下手势）、把遮罩收掉。
+// 收掉之后不再有任何地方会把它放回来（见 showEnter）。
+const showEnter = () => {
+  if (TOUCH) return;
+  if (endEl.style.display !== 'flex') enterEl.style.display = 'flex';
+};
+enterEl.addEventListener('click', () => {
+  initAudio();
+  AC?.resume();
+  if (TOUCH) { enterEl.style.display = 'none'; return; }
+  app.requestPointerLock();
+});
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === app;
   if (locked && !enterEl.classList.contains('back')) {
@@ -1485,19 +1548,45 @@ addEventListener('mousemove', e => {
     viewV + (INVERT_Y ? -1 : 1) * e.movementY * k / 180, 0.02, 0.98);
 });
 
-// 未锁定时（移动端、按 Esc 之后）保留拖拽环视
+// 未锁定时（移动端、按 Esc 之后）保留拖拽环视。
+// dragMoved 是给手机用的：一次触摸松手之后浏览器照样会补一个 click，
+// 如果刚才那一下其实是在转视角，就不能再当成"点了这里"（见 app 的 click）。
+let dragMoved = 0;
 app.addEventListener('pointerdown', e => {
   if (locked) return;
-  dragging = true; px = e.clientX; py = e.clientY; app.classList.add('dragging');
+  dragging = true; dragMoved = 0;
+  px = e.clientX; py = e.clientY; app.classList.add('dragging');
 });
 addEventListener('pointerup', () => { dragging = false; app.classList.remove('dragging'); });
 addEventListener('pointermove', e => {
-  if (!dragging || locked) return;
+  if (!dragging || locked || pinchD) return;
   const k = fov / FOV_DEF * 0.0009;
+  dragMoved += Math.abs(e.clientX - px) + Math.abs(e.clientY - py);
   viewU = wrap1(viewU - (e.clientX - px) * k);
   viewV = THREE.MathUtils.clamp(viewV - (e.clientY - py) * k * 2, 0.02, 0.98);
   px = e.clientX; py = e.clientY;
 });
+// 双指捏合 = 桌面上的滚轮缩放，范围和上限完全一样（45~92，见 wheel 那段的说明）。
+// 捏合期间把单指拖动让开，不然两根手指会同时被算成一次环视。
+let pinchD = 0, pinchFov = 0;
+const touchDist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+app.addEventListener('touchstart', e => {
+  if (e.touches.length !== 2) return;
+  pinchD = touchDist(e.touches);
+  pinchFov = fovTarget;
+  dragging = false;
+}, {passive: true});
+app.addEventListener('touchmove', e => {
+  if (e.touches.length !== 2 || !pinchD) return;
+  e.preventDefault();
+  const d = touchDist(e.touches);
+  if (d > 4) fovTarget = THREE.MathUtils.clamp(pinchFov * pinchD / d, 45, 92);
+}, {passive: false});
+addEventListener('touchend', e => {
+  // 只在真的捏过的时候才把这一下作废；普通单指点击的 touchend 也会走到这里，
+  // 不加 pinchD 这个前提就会把每一次点击都吞掉。
+  if (e.touches.length < 2 && pinchD) { pinchD = 0; dragMoved = 999; }
+}, {passive: true});
 app.addEventListener('wheel', e => {
   e.preventDefault();
   // 上限只留到 92：垂直再往外就是鱼眼（之前误滚到 100 就是"房间又大又歪"那次），
@@ -1808,8 +1897,8 @@ function hideCall() {
   holdCall = false;                            // 这通打完了，锁跟着解
   callEl.style.display = 'none';
   callEl.classList.remove('calling', 'locked');
-  // 通话过程中鼠标是解锁的，收工之后把"点击回到第一视角"那层放回来
-  if (!locked && endEl.style.display !== 'flex') enterEl.style.display = 'flex';
+  // 通话过程中鼠标是解锁的，收工之后把"点击回到第一视角"那层放回来（手机上不放，见 showEnter）
+  if (!locked) showEnter();
 }
 // 剧情里的二选一。返回选中的下标，用 await 直接接在剧情流程里。
 // 和手机上那两个选项不一样：这个不依赖手机界面，任何场景都能用。
@@ -1826,7 +1915,7 @@ function askChoice(...labels) {
         ev.stopPropagation();
         pickEl.classList.remove('on');
         pickEl.innerHTML = '';
-        if (!locked && endEl.style.display !== 'flex') enterEl.style.display = 'flex';
+        if (!locked) showEnter();
         blip('click');
         resolve(i);
       };
@@ -1977,7 +2066,24 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyF' && photoIdx < 0 && !walking) togglePhone();
 });
 
+// 屏幕坐标拾取。手机上手指没有准星那么准，热点精灵在画面里也就三四十像素，
+// 所以正中打不着就在周围一圈（半径约 18px）再各打一发，命中就算。
+// 桌面上（Esc 解锁之后用鼠标点）只打正中那一发，不放宽——鼠标本来就准。
+const PICK_RING = [[0, 0], [18, 0], [-18, 0], [0, 18], [0, -18],
+                   [13, 13], [-13, 13], [13, -13], [-13, -13]];
+function pickScreen(x, y) {
+  const ring = TOUCH ? PICK_RING : [[0, 0]];
+  for (const [dx, dy] of ring) {
+    ndc.set((x + dx) / innerWidth * 2 - 1, -((y + dy) / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const h = ray.intersectObjects(marks)[0];
+    if (h) return h;
+  }
+  return null;
+}
 app.addEventListener('click', e => {
+  // 手机上刚才那一下其实是在转视角（松手浏览器照样补一个 click），不能算点击
+  if (dragMoved > 12) { dragMoved = 0; return; }
   if (photoIdx >= 0) {                            // 照片墙自己接点击了，这里只是兜底
     nextPhoto();
     return;
@@ -1988,10 +2094,13 @@ app.addEventListener('click', e => {
   // 还剩十几秒时走到下一个房间，头两三下点热点就全被吞了，看着就是"点了没反应"。
   let hit = null;
   if (!walking && !calib && !phoneUp && !callOn) {
-    if (locked) ndc.set(0, 0);
-    else ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    hit = ray.intersectObjects(marks)[0] || null;
+    if (locked) {
+      ndc.set(0, 0);
+      ray.setFromCamera(ndc, camera);
+      hit = ray.intersectObjects(marks)[0] || null;
+    } else {
+      hit = pickScreen(e.clientX, e.clientY);
+    }
   }
   // 没点到东西才算"快进到下一句"。举着手机 / 拨号界面那会儿点击另有含义
   //（放下手机、选名字），那两种情况用空格快进。
@@ -3009,7 +3118,7 @@ function showEnding(e) {
 function hideEnding() {
   endEl.style.opacity = 0;
   setTimeout(() => { endEl.style.display = 'none'; }, 900);
-  if (!locked) enterEl.style.display = 'flex';   // 还得让人重新点进来拿回鼠标锁
+  if (!locked) setTimeout(showEnter, 950);       // 还得让人重新点进来拿回鼠标锁（手机上不需要）
 }
 // ——— 照片墙 ———
 // 墙上是同一个人的 48 种视角（tools/gen_wall_photos.py 生成），
@@ -3088,7 +3197,7 @@ function showPhoto(i) {
   photosEl.querySelector('.cap').textContent = typeof p.text === 'function' ? p.text() : p.text;
   const act = i > 0 ? `${ACTS[i - 1]}   ` : '';   // 第 0 张是整面墙，不属于任何一幕
   photosEl.querySelector('.idx').textContent =
-    `${act}${i + 1} / ${PHOTOS.length}   ← → 翻页 · Esc 退出`;
+    `${act}${i + 1} / ${PHOTOS.length}   ` + (TOUCH ? '点两侧箭头翻页 · 右上角退出' : '← → 翻页 · Esc 退出');
   photosEl.querySelector('.prev').disabled = i === 0;   // 第一张没有上一张
   photosEl.style.display = 'flex';
   requestAnimationFrame(() => photosEl.classList.add('on'));
@@ -3102,7 +3211,7 @@ function showPhoto(i) {
 function closePhotos(relock) {
   showPhoto(-1);
   afterBeat();
-  if (relock) {
+  if (relock && !TOUCH) {
     // 新版 Chrome 的 requestPointerLock 返回 Promise，被拦的时候是异步 reject，
     // try/catch 抓不到，所以两种情况都挡一下。锁不上也不要紧：
     // "点击画面回到第一视角"那层还在。
@@ -3250,8 +3359,13 @@ document.getElementById('cf-yes').onclick = () => { restartGame(); };
 function resize() {
   camera.aspect = innerWidth / innerHeight;
   renderer.setSize(innerWidth, innerHeight);
+  // 竖屏劝横屏。相机的垂直 fov 锁死 75，竖屏时水平视野只剩四十来度，
+  // 一间房子只能从一条缝里看——这不是布局能救的，所以直接盖一层让人转手机。
+  if (TOUCH) rotateEl.classList.toggle('on', innerHeight > innerWidth * 1.02);
 }
 addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 260));
+visualViewport?.addEventListener('resize', resize);   // iOS 地址栏收起/展开也要重算
 resize();
 buildSpots(node);
 for (const name of Object.keys(NODES)) loadDepth(name);   // 异步，载入完成后换掉房间壳
