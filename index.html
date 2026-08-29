@@ -1,0 +1,3394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>全景节点测试 · 痴迷</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;color:#ddd;
+            font:13px/1.6 system-ui,"Microsoft YaHei",sans-serif}
+  #app{position:fixed;inset:0;cursor:grab}
+  #app.dragging{cursor:grabbing}
+  #hud{position:fixed;left:12px;top:12px;z-index:10;background:rgba(0,0,0,.55);
+       padding:8px 10px;border-radius:6px}
+  #hud button{font:12px inherit;color:#ddd;background:#222;border:1px solid #444;
+              border-radius:4px;padding:3px 8px;margin:0 4px 4px 0;cursor:pointer}
+  #hud button:hover{background:#333}
+  #coord{color:#8ab4f8;font-family:ui-monospace,Consolas,monospace}
+  /* 设置：右上角。z-index 36 是故意压在 #flash(37)/#outvid(38) 下面的——
+     过门那段演出正在放的时候不该有个按钮飘在上面。 */
+  #settings{position:fixed;right:12px;top:12px;z-index:36;font:12px inherit;color:#bbb;
+           background:rgba(0,0,0,.55);border:1px solid #3a3a3a;border-radius:4px;
+           padding:5px 10px;cursor:pointer}
+  #settings:hover{color:#eee;border-color:#666}
+  #panel{position:fixed;inset:0;z-index:41;display:none;align-items:center;
+         justify-content:center;background:rgba(0,0,0,.78)}
+  #panel .box{background:#131315;border:1px solid #333;border-radius:8px;
+              padding:22px 24px;width:min(760px,92vw);max-height:88vh;overflow:auto}
+  #panel h3{margin:0;font-size:15px;font-weight:600;letter-spacing:.24em;color:#ddd}
+  #panel .bar{display:flex;align-items:center;justify-content:space-between;
+              border-bottom:1px solid #262628;padding-bottom:14px}
+  #panel .lbl{margin:20px 0 10px;font-size:12px;color:#888;letter-spacing:.1em}
+  #panel .bar button{font:12px inherit;color:#ddd;background:#1e1e20;border:1px solid #444;
+                     border-radius:4px;padding:6px 13px;margin-left:8px;cursor:pointer}
+  #panel .bar button:hover{background:#2a2a2c}
+  #panel .bar button.warn{color:#e88;border-color:#5a2b2b}
+  #panel .bar button.warn:hover{background:#2e1b1b}
+  #panel .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .slot{position:relative;background:#0d0d0f;border:1px solid #2c2c2e;border-radius:6px;
+        overflow:hidden;cursor:pointer;text-align:left}
+  .slot:hover{border-color:#5a5a5e}
+  .slot .shot{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#000}
+  .slot .empty{display:flex;width:100%;aspect-ratio:16/9;align-items:center;
+               justify-content:center;color:#4a4a4e;font-size:26px}
+  .slot .meta{padding:7px 9px;font-size:11px;line-height:1.7;color:#aaa}
+  .slot .meta b{display:block;font-weight:500;color:#ddd;font-size:12px}
+  .slot .meta span{color:#777}
+  .slot .del{position:absolute;right:5px;top:5px;font:11px inherit;color:#bbb;
+             background:rgba(0,0,0,.7);border:1px solid #444;border-radius:3px;
+             padding:2px 6px;cursor:pointer}
+  .slot .del:hover{color:#f99;border-color:#7a3535}
+  #panel .tip{margin-top:14px;font-size:11px;color:#666;line-height:1.9}
+  #confirm{position:fixed;inset:0;z-index:42;display:none;align-items:center;
+           justify-content:center;background:rgba(0,0,0,.72)}
+  /* 贴片：全景图画不出来的特写就盖一张图上去（门口他的正脸、指间那几根头发）。
+     等距圆柱投影里站在门口的人只有九十来像素高、脸不到十五像素，捏在指间的头发更是
+     一根都画不出来，所以这类镜头只能单独出图。
+     每张的取景不一样，object-position 由 showPlate() 现给，见那里的说明。
+     transform 那个慢推是为了让静止的照片有一点"你正盯着看"的呼吸感。 */
+  /* 贴片。以前是 object-fit:cover 铺满全屏，结果每张图都被裁掉一大截——
+     打量那张的眼睛直接被切到画面外，而那双眼睛就是这张图的全部意思。
+     现在改成 contain：整张图完整显示，窗口比例对不上就留黑边（所以要自带黑底，
+     不然全景会从黑边里透出来）。缓慢推近保留，但幅度从 1.02→1.09 收到 1.0→1.04，
+     边缘最多各损失 2%，不会再吃掉构图。 */
+  #plate{position:fixed;inset:0;z-index:31;width:100%;height:100%;object-fit:contain;
+         background:#000;
+         opacity:0;pointer-events:none;transform:scale(1);
+         transition:opacity 1.2s ease, transform 7s linear}
+  #plate.on{opacity:1;transform:scale(1.04)}
+  #confirm .box{background:#131315;border:1px solid #333;border-radius:8px;
+                padding:24px 28px;max-width:340px;text-align:center}
+  #confirm p{margin:0 0 6px;font-size:15px;color:#ddd}
+  #confirm .sub{font-size:12px;color:#888;line-height:1.8}
+  #confirm .row{margin-top:20px;display:flex;gap:10px;justify-content:center}
+  #confirm button{font:13px inherit;border-radius:4px;padding:7px 16px;cursor:pointer;
+                  color:#ddd;background:#1e1e20;border:1px solid #444}
+  #confirm button:hover{background:#2a2a2c}
+  #confirm button.warn{color:#e88;border-color:#5a2b2b}
+  #confirm button.warn:hover{background:#2e1b1b}
+  /* 第四幕那段黑场：动作全部藏在里面，只留声音和字幕。
+     所以 z-index 要压在 #story(33) 下面、盖住 #plate(31) 和画布——黑下去之后字幕还得看得见。
+     #flash 那层是白色过曝、37，是开门用的，两回事。 */
+  #dark{position:fixed;inset:0;z-index:32;pointer-events:none;background:#000;
+        opacity:0;transition:opacity 1.6s ease}
+  #dark.on{opacity:1}
+  #story{position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:33;
+         max-width:min(620px,80vw);background:rgba(8,8,10,.82);border-left:2px solid #c0392b;
+         padding:12px 16px;border-radius:4px;opacity:0;transition:opacity .45s;
+         pointer-events:none;font-size:15px;letter-spacing:.02em}
+  #story.on{opacity:1}
+  /* 说话人。谁说的话就在那句上面单独标一行——剧本的写法。
+     narration（没有说话人的叙述句）不带这一行，一眼能分出"谁在说"和"在讲什么"。 */
+  #story .who{display:block;font-size:12px;color:#c0392b;letter-spacing:.16em;
+              margin-bottom:5px}
+  /* 剧情里的二选一。故意压在字幕上面一点，让人先看完那句再选。
+     和字幕同一套样式（左边一道红），看着是同一个"叙述层"的东西。 */
+  #pick{position:fixed;left:50%;bottom:19%;transform:translateX(-50%);z-index:35;
+        display:none;flex-direction:column;gap:9px;min-width:min(430px,76vw)}
+  #pick.on{display:flex}
+  #pick button{font:15px inherit;color:#e6e6e6;background:rgba(8,8,10,.9);
+               border:1px solid #3d3d45;border-left:2px solid #7b2b22;
+               padding:12px 16px;border-radius:4px;cursor:pointer;text-align:left;
+               letter-spacing:.02em;transition:background .16s,border-color .16s,color .16s}
+  #pick button:hover{background:#1e1313;border-left-color:#c0392b;color:#fff}
+  #crosshair{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;
+             z-index:9;pointer-events:none;border:1px solid rgba(255,255,255,.3);border-radius:50%;
+             transition:border-color .12s,background .12s}
+  #crosshair.hot{border-color:#ffd479;background:rgba(255,212,121,.28)}
+  .label{position:fixed;z-index:8;pointer-events:none;transform:translate(-50%,-140%);
+         font-size:12px;color:#fff;text-shadow:0 0 6px #000;white-space:nowrap}
+  .label.go{color:#ffd479;font-weight:600}
+  #enter{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+         background:rgba(0,0,0,.72);cursor:pointer;text-align:center;font-size:19px;letter-spacing:.05em}
+  #enter span{display:block;margin-top:10px;font-size:13px;color:#999;letter-spacing:0}
+  /* 第一次进入要挡住全部；但按 Esc 退出后再盖回来的这一层要沉到面板下面，
+     不然它会吃掉左上角那些按钮的点击（z-index 30 盖住 z-index 10 的 #hud） */
+  #enter.back{z-index:9;background:rgba(0,0,0,.5);font-size:15px}
+  /* 开门那一下的过曝：白天的光从门缝里灌进来，顺便盖住"房间壳换成视频"这个切换 */
+  #flash{position:fixed;inset:0;z-index:37;pointer-events:none;background:#f2efe9;
+         opacity:0;transition:opacity 1.4s ease-in}
+  #flash.on{opacity:1}
+  /* 门后面那段视频：整屏播放，4:3 的片子在宽屏上留黑边，不裁 */
+  #outvid{position:fixed;inset:0;z-index:38;display:none;width:100%;height:100%;
+          object-fit:contain;background:#000;opacity:0;transition:opacity .8s}
+  #ending{position:fixed;inset:0;z-index:40;display:none;flex-direction:column;
+          align-items:center;justify-content:center;background:#000;opacity:0;
+          transition:opacity 2s ease;padding:0 12vw;text-align:center}
+  #ending h2{font-size:22px;font-weight:600;letter-spacing:.3em;color:#c0392b;margin:0 0 22px}
+  #ending p{font-size:16px;line-height:2.1;color:#ccc;max-width:640px;margin:0}
+  #ending button{margin-top:34px;font:13px inherit;color:#ddd;background:#181818;
+                 border:1px solid #444;border-radius:4px;padding:7px 20px;cursor:pointer}
+  /* 照片墙的放大视图。以前这一层是 pointer-events:none、靠鼠标锁定 + 落回 #app 翻页的，
+     结果只能一路往下点：没有鼠标指针、没法回看上一张。现在反过来——
+     进照片墙就退出鼠标锁定（showPhoto 里做），指针露出来，这一层自己接点击：
+     左右两个箭头翻页、右上角叉退出、图片以外的空白处点一下也是下一张。 */
+  #photos{position:fixed;inset:0;z-index:35;display:none;align-items:center;
+          justify-content:center;background:rgba(0,0,0,.94);opacity:0;
+          transition:opacity .3s;pointer-events:none;cursor:pointer}
+  #photos.on{opacity:1;pointer-events:auto}
+  #photos .nav,#photos .close{position:absolute;pointer-events:auto;cursor:pointer;
+          background:rgba(12,12,14,.72);border:1px solid #3d3d45;color:#ddd;
+          border-radius:4px;font:inherit;line-height:1;
+          transition:background .16s,border-color .16s,color .16s,opacity .16s}
+  #photos .nav{top:50%;width:46px;height:78px;margin-top:-39px;font-size:30px}
+  #photos .nav.prev{left:2.2vw}
+  #photos .nav.next{right:2.2vw}
+  #photos .close{right:16px;top:44px;width:34px;height:34px;font-size:14px}
+  #photos .nav:hover,#photos .close:hover{background:#1e1313;border-color:#c0392b;color:#fff}
+  #photos .nav:disabled{opacity:.22;cursor:default;background:rgba(12,12,14,.4)}
+  #photos img{max-width:86vw;max-height:78vh;box-shadow:0 0 70px #000;
+              filter:contrast(1.04) saturate(.92)}
+  #photos .cap{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);
+               max-width:min(700px,88vw);text-align:center;font-size:15px;line-height:1.95;
+               color:#ddd;text-shadow:0 0 8px #000;letter-spacing:.02em}
+  #photos .idx{position:absolute;right:18px;top:15px;font-size:12px;color:#666;
+               font-family:ui-monospace,Consolas,monospace}
+
+  /* 手里的手机。手和机身是生成的写实素材（绿幕已抠、已按房间灯光调色），
+     分两层贴：phone-hand.png 在下、DOM 屏幕在中、phone-hand-front.png（只有皮肤）在上。
+     这样压在屏幕上的拇指才在屏幕前面——单层的话 DOM 屏幕会盖住拇指，遮挡就反了。
+     屏幕矩形是量出来的：整图 left 8.81% / top 0.16% / w 43.45% / h 59.25%。
+     transform-origin 定在屏幕的水平中心 + 图的底边：缩放时底边不动（所以小臂永远
+     切在画框外，不会在右下角断成一截），而且放大不会让手机横向漂走。
+     只动 transform（GPU 能插值），不动 right/bottom/width：那些一改就是跳变 */
+  #phone{position:fixed;right:-4vw;bottom:-8vh;width:min(430px,45vw);aspect-ratio:840/1259;
+         z-index:30;cursor:pointer;pointer-events:auto;transform-origin:30.5% 100%;
+         transform:translate(14%,56%) rotate(-15deg) scale(1);
+         transition:transform .55s cubic-bezier(.2,1.14,.32,1),filter .5s;
+         filter:drop-shadow(-12px -6px 30px rgba(0,0,0,.8)) brightness(.72)}
+  #phone.up{transform:translate(calc(-54vw + 69.5%),0) rotate(-3deg) scale(1.18);
+            filter:drop-shadow(-16px -10px 38px rgba(0,0,0,.85)) brightness(1.02)}
+  #phone:not(.up):hover{transform:translate(13%,50%) rotate(-14deg) scale(1.01)}
+  /* 呼吸：手不会绝对静止。放在内层，跟外层的抬手 transform 互不覆盖 */
+  #phone .rig{position:absolute;inset:0;animation:sway 6.4s ease-in-out infinite}
+  #phone.up .rig{animation-duration:8.5s}
+  @keyframes sway{0%,100%{transform:translate(0,0) rotate(0)}
+                  33%{transform:translate(-1%,-0.7%) rotate(.6deg)}
+                  66%{transform:translate(.8%,.5%) rotate(-.45deg)}}
+  #phone .hand,#phone .handfront{position:absolute;inset:0;width:100%;height:100%;
+              object-fit:contain;display:block;user-select:none;-webkit-user-drag:none;
+              transition:opacity .5s}
+  #phone .handfront{pointer-events:none}
+  /* 屏幕的位置、倾角、圆角都是从素材里量出来的（tools/_measure_screen.py）：
+     黑板占 left 7.62% / top 0.16% / w 44.76% / h 59.30%，但那块黑**包含边框**，
+     所以显示区要再往里收（横向 5.5%、纵向 3%）；机身本身顺时针倾 1.47 度，
+     屏幕必须跟着倾，不然贴上去就是歪的——之前那版屏幕比玻璃大、又没倾，才显得假 */
+  #phone .scr{position:absolute;left:10.1%;top:1.9%;width:39.8%;height:55.7%;
+              border-radius:9%/6%;overflow:hidden;background:#07080a;
+              transform:rotate(1.47deg);transition:filter .5s}
+  /* 视频比屏幕矮胖（540x720 对 188x371），用 cover 裁掉两边，跟手机全屏播放一样。
+     再压暗、加暖：一块干净明亮的屏幕贴在昏黄房间里，一眼就看出是合成的 */
+  #phone .vid{width:100%;height:100%;object-fit:cover;display:block;
+              filter:sepia(.16) saturate(.88) brightness(.8) contrast(1.06)}
+  /* 玻璃：一道斜的高光 + 顶部一点内阴影。没有这层，屏幕就是一个贴上去的矩形 */
+  #phone .glass{position:absolute;inset:0;pointer-events:none;mix-blend-mode:screen;
+                background:linear-gradient(118deg,rgba(255,255,255,.13) 0 18%,
+                          rgba(255,255,255,.03) 26% 44%,rgba(255,255,255,0) 52%),
+                          radial-gradient(70% 22% at 22% 2%,rgba(255,246,225,.16),transparent 70%)}
+  #phone .scr::after{content:'';position:absolute;inset:0;pointer-events:none;
+                     box-shadow:inset 0 2px 6px rgba(0,0,0,.55),
+                                inset 0 -10px 22px rgba(0,0,0,.35)}
+  /* 屏幕的光要洒到手上。放在前景手之后、用 plus-lighter 叠加，
+     位置压在拇指和食指那一带——屏幕亮着而手完全不受光，是最出戏的地方 */
+  #phone .spill{position:absolute;left:2%;top:38%;width:62%;height:46%;pointer-events:none;
+                opacity:0;transition:opacity .5s .12s;mix-blend-mode:plus-lighter;
+                background:radial-gradient(52% 46% at 40% 40%,rgba(255,236,205,.34),
+                          rgba(255,225,180,.12) 55%,transparent 78%)}
+  #phone.up .spill{opacity:1}
+  #phone.dim .scr{filter:brightness(.2) saturate(.45)}
+  /* 举起来之后再往前凑：整块屏幕推到画面正中并放大（缩放中心就是屏幕中心，
+     位移由 JS 按 transform-origin 算，见 zoomTransform），手和机身淡出，
+     顺手把机身那 1.47 度倾角转回来，只剩那段录像正正地摆在眼前 */
+  #phone.zoom{transition:transform .85s cubic-bezier(.22,.9,.24,1),filter .6s;
+              filter:drop-shadow(0 0 44px rgba(0,0,0,.9)) brightness(1)}
+  #phone.zoom .hand,#phone.zoom .handfront{opacity:0}
+  #phone.zoom .spill{opacity:0}
+  #phone.zoom .glass{opacity:.3}
+  #phone.zoom .scr::after{box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+  #phone.zoom .vid{filter:sepia(.06) saturate(.96) brightness(.98) contrast(1.03)}
+  /* 放大时把房间压暗，不然背景的墙和热点标签会一直跟这段录像抢注意力 */
+  #phone-bd{position:fixed;inset:0;z-index:29;background:rgba(4,4,6,.74);
+            opacity:0;pointer-events:none;transition:opacity .7s}
+  #phone-bd.on{opacity:1}
+  /* 录像放完之后压在放大的屏幕上的手机界面（通讯录 / 通话中）。
+     三张图都是 720x1440，跟屏幕的 0.4767 比例几乎一致，所以直接铺满。
+     它是独立的固定定位层，不放进 #phone——放进去会跟着 scale 一起放大，
+     里面的热区尺寸就得跟缩放系数纠缠。位置尺寸由 layoutCall() 按 zoomTransform 算。
+     热区的百分比是从图里量出来的（tools 里的临时脚本）：分隔线在 13.65% / 37.67% / 61.15%，
+     挂断键 x 40.3%~59.0%、y 84.4%~93.5% */
+  #call{position:fixed;z-index:32;display:none;overflow:hidden;border-radius:12px;
+        box-shadow:0 0 46px rgba(0,0,0,.9)}
+  #call .ui{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+            user-select:none;-webkit-user-drag:none;
+            filter:sepia(.06) brightness(.94) contrast(1.02)}  /* 白底屏幕压一点暖调 */
+  #call .hot{position:absolute;left:0;width:100%;cursor:pointer;transition:background .15s}
+  #call .hot:hover{background:rgba(70,130,255,.15)}
+  #call .jude{top:13.65%;height:24.02%}
+  #call .sarah{top:37.67%;height:23.48%}
+  #call .hangup{position:absolute;left:40.3%;top:84.4%;width:18.7%;height:9.1%;
+                display:none;cursor:pointer;border-radius:24%}
+  #call.calling .hot{display:none}
+  #call.calling .hangup{display:block}
+  /* 打给他的那通挂不掉。红键是画在 phone-ui-jude.jpg 里的，没法真的置灰，
+     所以只能换个光标提示"这儿点不动"，真正的说明交给那句字幕。 */
+  #call.locked .hangup{cursor:not-allowed}
+
+
+  /* 引导箭头。目标在视野里就贴着目标抖动，不在视野里就钉到屏幕边缘提示往哪边转 */
+  #guide{position:fixed;z-index:34;display:none;pointer-events:none;
+         color:#ffd479;text-shadow:0 0 12px rgba(0,0,0,.95);text-align:center;
+         transform:translate(-50%,-50%)}
+  #guide .arw{font-size:34px;line-height:1;animation:gbob 1.1s ease-in-out infinite}
+  #guide .txt{margin-top:2px;font-size:13px;letter-spacing:.04em;white-space:nowrap}
+  @keyframes gbob{0%,100%{transform:translateY(0)}50%{transform:translateY(7px)}}
+
+
+
+
+
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="crosshair"></div>
+<div id="hud">
+  <button id="btn-seam">看接缝</button><button id="btn-up">看天顶</button
+  ><button id="btn-down">看地面</button><button id="btn-mark">记录热点</button>
+  <div id="coord">—</div>
+  <div style="color:#888;margin-top:2px">拖动转视角 · 滚轮缩放 · WASD 微幅探身 · 看着门按住 W 走进去 · F 举起手机 · C 标定 · M 静音</div>
+
+
+
+
+
+</div>
+<div id="dark"></div>
+<div id="story"></div>
+<div id="pick"></div>
+<div id="photos"><img alt=""><div class="cap"></div><div class="idx"></div>
+  <button class="nav prev" type="button" aria-label="上一张">&#8249;</button>
+  <button class="nav next" type="button" aria-label="下一张">&#8250;</button>
+  <button class="close" type="button" aria-label="退出">&#10005;</button>
+</div>
+<div id="phone-bd"></div>
+<div id="phone" class="dim">
+  <div class="rig">
+    <img class="hand" src="images/phone-hand.png" alt="">
+    <div class="scr">
+      <video class="vid" src="images/phone-vid.mp4" playsinline preload="auto"></video>
+      <div class="glass"></div>
+    </div>
+    <img class="handfront" src="images/phone-hand-front.png" alt="">
+    <div class="spill"></div>
+  </div>
+</div>
+<div id="guide"><div class="arw">▼</div><div class="txt"></div></div>
+<div id="call">
+  <img class="ui" src="images/phone-ui-contacts.jpg" alt="">
+  <div class="hot jude" data-who="jude"></div>
+  <div class="hot sarah" data-who="sarah"></div>
+  <div class="hangup"></div>
+</div>
+<div id="enter">点击进入<span>WASD / 方向键走动 · 鼠标环视 · 准星对准后点击交互 · Esc 退出</span></div>
+<button id="settings">设置</button>
+<div id="panel">
+  <div class="box">
+    <div class="bar">
+      <h3>设 置</h3>
+      <div>
+        <button id="pn-restart" class="warn">重新开始</button><button id="pn-close">关闭</button>
+      </div>
+    </div>
+    <div class="lbl">存档 · 六格</div>
+    <div class="grid" id="pn-slots"></div>
+    <div class="tip">空格子点一下存进去，有画面的点一下读取（会重开页面）。右上角 × 删掉那一格。<br>
+      另外刷新页面会自动回到你离开时的场景，这个不占格子。</div>
+  </div>
+</div>
+<div id="confirm">
+  <div class="box">
+    <p>重新开始？</p>
+    <div class="sub">当前进度会被清空，从那个下雨的夜里重来一遍。</div>
+    <div class="row">
+      <button id="cf-no">继续玩</button><button id="cf-yes" class="warn">重新开始</button>
+    </div>
+  </div>
+</div>
+<div id="ending"><h2></h2><p></p><button id="end-btn" type="button">再走一遍</button></div>
+<div id="flash"></div>
+<img id="plate" alt="">
+<video id="outvid" src="images/out-saturday.mp4" playsinline preload="auto"></video>
+
+
+
+
+
+<script type="importmap">
+{"imports":{"three":"./vendor/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// 剧情状态。flags 记事件，dread 是不安值，两者共同决定看到哪个结局。
+// day 是打完那通电话之后的"周六白天"：屋里提亮、雨停、目标变成那道防盗门。
+const S = {flags: {}, dread: 0, seen: {}, day: false};
+const has = k => !!S.flags[k];
+const mark = k => { S.flags[k] = true; };
+// 门外那个机位的三张图：他进门 / 两小时后他出门 / 门口空了。
+// 同一个机位、同一种光（out 和 empty 是拿 v1 当参考图生的），所以换的只是贴图。
+const PANO_OUT_HIM = 'images/pano-outside-out.png';
+const PANO_OUT_EMPTY = 'images/pano-outside-empty.png';
+// 第四张：夜里的同一条街。"手机没掏出来"那条支线走到最后，她是自己从他家走出来的，
+// 那时候天早黑了，再用中午那张就散了。也是拿 empty 当参考图生的，只改光，
+// 房子、灌木、车、树一个都没动，所以热点坐标继续通用。
+const PANO_OUT_DUSK = 'images/pano-outside-dusk.png';
+// 第二章那两张：她自己租下的隔壁。镜像户型、空屋子、裸地板，什么家具都没有——
+// 一个纸箱、一台电钻、一个睡袋，这就是她搬过来的全部。空本身就是这一章的调子。
+const PANO_ND_LIVING = 'images/pano-nextdoor-living-v1.png';
+const PANO_ND_BED = 'images/pano-nextdoor-bed-v1.png';
+
+// 场景图：每个节点一张全景图 + 若干热点。
+// 热点坐标用平面全景图上的 u/v（u 水平 0~1 左→右，v 垂直 0~1，0 是图顶端），
+// 可以在游戏里对准物体按"记录热点"直接取值。
+// to = 走过去到哪个节点，arrive = 你从新房间的哪道门出来（朝向由此推算）。
+// if = 满足条件才出现，on = 触发时改状态，text 可以是函数（按状态给不同台词）。
+const NODES = {
+  living: {
+    name: '客厅',
+    pano: 'images/pano-livingroom-v1.png',
+    panoDay: 'images/pano-livingroom-day.jpg',
+    lamp: {u:0.595, v:0.524},          // 该节点的主光源，关灯效果以此为中心
+    off: 0,
+    rain: 0.55, drone: 0.05,           // 有窗，雨声最大
+    // 电视屏幕在全景图上的像素范围（量出来的：x 364~450, y 436~500，正好 4:3）。
+    // 播放画面直接画进房间壳的着色器里，所以永远贴死在屏框上，走动也不会脱开。
+    tv: {u0: 364 / 1774, u1: 450 / 1774, v0: 436 / 887, v1: 500 / 887,
+         // 按顺序试，第一个能解码的就用。浏览器不认 .ncm 这类容器，必须是普通音频文件
+         songs: ['audio/forever.mp3', 'audio/forever.m4a', 'audio/forever.flac',
+                 'audio/forever.wav', 'audio/forever.ogg']},
+    tvState: 0,                        // 0 雪花（图里本来的样子） 1 播放 2 关机
+    spots: [
+      {u:0.595, v:0.524, label:'关灯',   action:'lamp', if: () => !S.day},
+      {u:0.955, v:0.550, label:'进卧室', to:'bedroom',  arrive:0.764, text:'门缝里透出光。你记得离开时把它关严了。'},
+      {u:0.055, v:0.520, label:'去走廊', id:'toCorridor', to:'corridor', arrive:0.493, text:'走廊尽头没有灯。你听见自己吞口水的声音。'},
+      {u:0.230, v:0.530, label:'电视', id:'tv', dread:1, action:'tv'},
+      {u:0.700, v:0.400, label:'照片墙', id:'wall', dread:1, action:'photos'},
+    ],
+  },
+  bedroom: {
+    name: '卧室',
+    pano: 'images/pano-bedroom-v1.png',
+    panoDay: 'images/pano-bedroom-day.jpg',
+    lamp: {u:0.458, v:0.270},          // 天花板吊灯
+    off: 0,
+    rain: 0.35, drone: 0.07,
+    spots: [
+      {u:0.458, v:0.270, label:'关灯',   action:'lamp', if: () => !S.day},
+      {u:0.764, v:0.530, label:'回客厅', to:'living', arrive:0.955, text:'你退回客厅。'},
+      {u:0.545, v:0.500, label:'三脚架', id:'cam', dread:2,
+       text:'镜头对着床，红灯亮着。它不是你架的。',
+       on: () => mark('foundCamera')},
+      {u:0.290, v:0.680, label:'床', id:'bed', dread:1,
+       text: () => has('foundCamera')
+         ? '凹陷的形状和你的身体一样。它是热的。'
+         : '被子是掀开的。凹陷还在。'},
+      {u:0.657, v:0.590, label:'镜子', id:'mirror', dread:2,
+       text: () => NODES.bedroom.off
+         ? '你这边的灯已经关了。镜子里那盏还亮着。'
+         : '镜子里的房间比这间干净。',
+       on: () => { if (NODES.bedroom.off) mark('mirrorLit'); }},
+      {u:0.099, v:0.560, label:'衣柜', id:'closet',
+       text:'衣架空了三个。你只有两件外套。'},
+    ],
+  },
+  corridor: {
+    name: '走廊',
+    pano: 'images/pano-corridor-v1.png',
+    panoDay: 'images/pano-corridor-day.jpg',
+    off: 0,                            // 只有一支坏掉的日光灯，没有可开关的灯
+    rain: 0.18, drone: 0.13,           // 无窗，雨声闷，低频嗡鸣更重
+    spots: [
+      {u:0.493, v:0.520, label:'回客厅', to:'living', arrive:0.055, text:'你退回客厅。'},
+      {u:0.175, v:0.520, label:'防盗门', id:'door', dread:1,
+       text: () => S.day
+         ? '天亮了，锁还是那五道。但今天你要出去——他说了行。'
+         : has('foundCamera')
+           ? '锁是新换的，五道，全从里面反锁。你没有这把钥匙。'
+           : '五道锁全是从里面反锁的。',
+       on: () => mark('lockedIn')},
+      {u:0.809, v:0.450, label:'镜子', id:'crack',
+       text:'裂缝把你的脸分成两半，两半不是同一个表情。'},
+      {u:0.953, v:0.790, label:'信件', id:'mail', dread:1,
+       text:'全都没拆。收件人不是你，但住址是这里。',
+       on: () => mark('otherName')},
+    ],
+  },
+  // 最后一段：周六下午，他家门外。玩家蹲在灌木丛里，隔着树叶看他进门。
+  // 这张全景图自带"藏在灌木里"——前景的枝叶就是遮挡（tools/gen_pano_outside.py）。
+  // 同一个机位另有两张：他出门（-out）和门口空了（-empty），见 hedgeBeat。
+  outside: {
+    name: '他家门外',
+    pano: 'images/pano-outside-v1.png',
+    off: 0,
+    // 户外一滴雨都不该有。这里的底噪走 wind（合成的风，见 initAudio），
+    // 不能拿 rain.mp3 压低了当"远处车流"——那是一段真的雨声录音，压多低都还是雨。
+    rain: 0, wind: 0.11, drone: 0.02,
+    // "手机没掏出来"那一支：她从他家走出来的那一下。这里只交代"外面已经黑了"，
+    // 出租启事那张纸留给玩家自己转头发现（热点 tolet）。
+    onArrive: () => {
+      if (!has('outOfBed') || has('sawToLet')) return;
+      setTimeout(() => say('外面已经黑了。你把门轻轻带上，走下台阶。整条街上一个人都没有。',
+                           6400), 900);
+    },
+    spots: [
+      {u:0.300, v:0.330, label:'他', id:'him', dread:2, if: () => !has('heLeft'),
+       text:'他背对着你，一只脚已经跨进门里。他没有回头——他不知道你跟到了这儿。',
+       on: () => mark('followedHim')},
+      {u:0.330, v:0.800, label:'灌木', id:'hedge', action:'hide',
+       text:'树叶就贴在你脸上。你听得见自己的呼吸，比你以为的大很多。'},
+      {u:0.300, v:0.245, label:'那扇门', id:'hisdoor', dread:1, if: () => !has('heLeft'),
+       text:'门是半开的。他进去之后不会锁——他从来不锁。',
+       on: () => mark('doorOpen')},
+      // 他走了之后同一个位置换成"能进去"的门。坐标是对着 -empty 那张量的
+      {u:0.315, v:0.345, label:'进他家', id:'hisdoor2', if: () => has('heLeft') && !has('outOfBed'),
+       to:'hishouse', arrive:0.02,
+       text:'门没锁。你早就知道他不锁门。'},
+      // "手机没掏出来"那一支：她从他家走出来之后才有这一个。隔壁那户临街的窗户，
+      // 玻璃里面贴着一张 A4 的出租启事——全景图这个分辨率上那张纸看不出字，
+      // 字交给贴片（PLATE_TOLET）。坐标是对着 -empty / -dusk 那两张量的（隔壁那户的
+      // 一楼窗户，紧挨着他家那面凸窗的右边）。这一个给大一点的判定圈：
+      // 整条支线就靠它推进，不该让人对着准星找半天。
+      {u:0.505, v:0.398, label:'邻居家的窗户', id:'tolet', action:'tolet', size:0.30,
+       if: () => has('outOfBed')},
+    ],
+  },
+  // 门里面。他不在家，你有整个晚上。
+  // 热点坐标是对着 images/pano-hishouse-v1.png 量的（u=x/1774, v=y/887）。
+  // 前门在图的左右边缘（接缝上），所以从门外走进来时 arrive 取 0.02。
+  hishouse: {
+    name: '他家',
+    pano: 'images/pano-hishouse-v1.png',
+    off: 0,
+    rain: 0, wind: 0, drone: 0.06,
+    spots: [
+      {u:0.024, v:0.482, label:'门', id:'hisfront',
+       text:'门在你背后合上了。你没有锁——你不打算待到他回来。'},
+      // "手机没掏出来"那一支：从床底爬出来之后，这道门才真的能走出去。
+      // pano 那个字段是给 h.to 那一支用的：走出去之前把门外换成夜里那张。
+      {u:0.024, v:0.520, label:'走出去', id:'hisout',
+       to:'outside', arrive:0.30, pano: PANO_OUT_DUSK, if: () => has('outOfBed')},
+      {u:0.128, v:0.474, label:'挂钩', id:'hishook', dread:1,
+       text:'他的外套。还有一只帆布包，不是他的尺码。'},
+      {u:0.160, v:0.702, label:'鞋', id:'hisshoes',
+       text:'一双白球鞋摆得很整齐。旁边那双不见了——他穿着出去了。'},
+      {u:0.293, v:0.606, label:'沙发', id:'hissofa',
+       text:'毯子还是掀开的形状。你伸手摸了一下，是凉的。'},
+      {u:0.428, v:0.674, label:'茶几', id:'histable', dread:1,
+       text:'两只杯子。一只是他的。'},
+      {u:0.510, v:0.506, label:'电视', id:'histv',
+       text:'黑屏。你在屏幕上看见自己站在他家客厅正中间。'},
+      {u:0.686, v:0.396, label:'相框', id:'hisphotos', dread:2, action:'frame',
+       text:'架子上的相框都朝着门口。里面没有一张是你。'},
+      {u:0.828, v:0.540, label:'楼上', id:'hisstairs', dread:1,
+       to:'hisbed', arrive:0.099,
+       text:'楼梯上去是黑的。他的卧室在上面。你已经知道床摆在哪一侧。'},
+    ],
+  },
+  // 二楼他的卧室。也就是她睡过两年的那张床。
+  // 用 v10 = v9 + tools/shade_underbed.py。这一串的来历：v5 定房间几何，v6 改皮床，
+  // v7 把床挪离中轴线、往后推、底座改成硬边长方体（v6 那种正前方对称大方块贴到球面上
+  // 就是一坨往外鼓的东西，"太像广角扭曲"是这么来的，跟相机 fov 无关）。
+  // v8 想抬床底，写"20 centimetres"模型完全没动，废掉；v9 换成相对比例（"底座只有床垫
+  // 那么厚、下面架四条短腿"）才生效，但缝里地板亮得一清二楚——能躲进去，却看不出
+  // "不知道里面有什么"。所以 v10 不再让模型猜，直接按量出来的坐标把那道缝压进阴影。
+  // v4~v9 都留在 images/ 下没删，方便回退对比。
+  // 热点坐标对着 images/pano-hisbed-v7.png 量的，v8/v9/v10 家具位置没动，继续沿用
+  //（u=x/1774, v=y/887）。
+  hisbed: {
+    name: '他的卧室',
+    pano: 'images/pano-hisbed-v10.png',
+    off: 0,
+    rain: 0, wind: 0, drone: 0.05,
+    // 进门那句不能挂在楼梯热点上——那句是在楼梯上说的。走完才说这一句。
+    onArrive: () => {
+      if (has('inHisBed')) return;
+      mark('inHisBed');
+      setTimeout(() => say('这张床你睡过两年。靠墙那一侧是你的，你到现在还记得该往哪边翻身。', 7000), 900);
+    },
+    spots: [
+      {u:0.446, v:0.592, label:'那张床', id:'hairbed', action:'hair'},
+      // 楼下门一响才出现。坐标就是 v10 里被压暗的那道缝的中间
+      {u:0.439, v:0.665, label:'床底', id:'underbed', action:'hideunder',
+       if: () => has('coupleHome') && !has('hidUnder')},
+      // 第二章：周二她又回到这间屋子。同一道缝，第二次钻进去。
+      {u:0.439, v:0.665, label:'床底', id:'underbed2', action:'ch2hide', size:0.20,
+       if: () => has('ch2Back') && !has('ch2Under')},
+      {u:0.549, v:0.598, label:'床头柜', id:'hisnight', dread:1,
+       text:'一盏台灯，一根黑色发圈，一对很小的金耳钉。发圈不是你的——你的头发从来不用扎。'},
+      {u:0.732, v:0.537, label:'穿衣镜', id:'hismirror', dread:1,
+       text:'镜子里站着一个人，站在他的卧室中间，手里空着。你花了半秒才认出那是你。'},
+      {u:0.318, v:0.505, label:'衣柜', id:'hiscloset',
+       text:'门开了一条缝。里面挂着的衣服，有几件的尺码不是他的。'},
+      {u:0.236, v:0.598, label:'书架', id:'hisshelf',
+       text:'一排碟片和平装书，中间倒着一个相框。你没有把它翻过来。'},
+      {u:0.842, v:0.622, label:'书桌', id:'hisdesk',
+       text:'笔记本合着，杯底一圈干掉的咖啡。他出门前坐在这儿坐了很久。'},
+      {u:0.099, v:0.528, label:'下楼', id:'hisdown', to:'hishouse', arrive:0.828,
+       text:'你退到楼梯口。'},
+    ],
+  },
+  // 床底下。相机贴在地板上，只能从床架和地板之间那道缝往外看——
+  // 所以这里平时没有任何可点的东西：钻进来是单向的，之后全靠演出推进
+  //（underBedBeat → judeLeavesBeat → 二选一 → 掏手机那一支走 caughtBeat）。
+  // 唯一的例外是"没掏手机"那一支：Claire 走了之后多出一个"爬出去"，
+  // 坐标就是那道亮着的缝（进来时朝的也是这个方向）。
+  underbed: {
+    name: '床底',
+    pano: 'images/pano-underbed-v1.png',
+    off: 0,
+    rain: 0, wind: 0, drone: 0.14,          // 无窗无雨，只剩心跳那种低频压得更重
+    onArrive: () => underBedBeat(),
+    spots: [
+      {u:0.350, v:0.500, label:'爬出去', id:'crawlout', action:'crawlout',
+       if: () => has('claireLeft') && !has('outOfBed')},
+    ],
+  },
+  // ——— 第二章 · 隔壁 ———
+  // 她租下的那一户。跟他家是镜像户型，所以两间卧室背靠背，中间就一堵墙。
+  // 这两个房间刻意什么都没有：能点的东西只有钥匙、睡袋、电钻和那面墙。
+  // 热点坐标是对着 pano-nextdoor-living-v1.png / -bed-v1.png 量的（u=x/1774, v=y/887）。
+  ndliving: {
+    name: '隔壁 · 楼下',
+    pano: PANO_ND_LIVING,
+    off: 0,
+    rain: 0, wind: 0.04, drone: 0.06,
+    spots: [
+      {u:0.425, v:0.834, label:'纸箱', id:'ndkeys',
+       text:'一个纸箱，上面搁着两把钥匙。中介说得很轻松：上一个房客走得急。'},
+      {u:0.527, v:0.474, label:'窗户', id:'ndwin1',
+       text:'那张"待租"的纸从里面被你揭下来了。玻璃上还留着四个胶印。'},
+      {u:0.913, v:0.507, label:'门', id:'nddoor1',
+       text:'你的门。跟他家那道门中间隔着一道砖墙，两扇门只差三步。'},
+      {u:0.163, v:0.485, label:'楼上', id:'ndup', to:'ndbed', arrive:0.107,
+       text:'楼梯在这一侧——他家的在另一侧。这栋房子是照着镜子盖的。'},
+    ],
+  },
+  ndbed: {
+    name: '隔壁 · 卧室',
+    pano: PANO_ND_BED,
+    off: 0,
+    rain: 0, wind: 0.03, drone: 0.08,
+    onArrive: () => ndBedArrive(),
+    spots: [
+      // 同一个位置上三个热点接力：先是"那面墙"，看过之后变成"那个凹坑"，钻通之后变成"那个洞"
+      {u:0.665, v:0.699, label:'那面墙', id:'ndwall', action:'dent', size:0.24,
+       if: () => !has('sawDent')},
+      {u:0.665, v:0.699, label:'那个凹坑', id:'nddent', action:'drill', size:0.22,
+       if: () => has('sawDent') && !has('holeOpen')},
+      {u:0.665, v:0.699, label:'那个洞', id:'ndhole', action:'peep', size:0.22,
+       if: () => has('holeOpen')},
+      {u:0.592, v:0.789, label:'睡袋', id:'ndsleep',
+       text:'睡袋铺在这面墙底下。你昨天晚上是贴着这面墙睡的，脸朝墙。'},
+      {u:0.846, v:0.840, label:'纸箱', id:'nddrillbox',
+       text:'箱子里只有三样东西：一台电钻、一盒钻头、一卷胶带。你搬进来什么都没带。'},
+      {u:0.200, v:0.462, label:'窗户', id:'ndwin2', dread:1,
+       text:'从这扇窗探出去，能看见他家卧室那扇窗的一角。窗帘是拉着的，缝里有光。'},
+      {u:0.107, v:0.507, label:'下楼', id:'nddown', to:'ndliving', arrive:0.163,
+       text:'你退到楼梯口。'},
+    ],
+  },
+};
+// 结局：每次交互后从上往下匹配，第一个成立的生效
+const ENDINGS = [
+  {id:'observer', if: () => has('foundCamera') && has('mirrorLit') && has('tvFigure'),
+   title:'观 察 者',
+   text:'你终于把三样东西摆到了一起：对着床的镜头、镜子里没关的灯、雪花里那个只在黑暗中出现的人形。它们不是在监视你。它们是在回放。你早就不住这里了，剩下的只是这间屋子还记得你的样子，一遍一遍地演。'},
+  {id:'tenant', if: () => has('lockedIn') && has('otherName') && S.dread >= 5,
+   title:'房 客',
+   text:'信上的名字你念了很多遍，念到它开始像自己的名字。门从里面锁着五道，因为你从来没打算出去——你只是想弄清楚，在你搬进来之前，是谁把这些照片贴上墙的。'},
+  {id:'dark', if: () => S.dread >= 9,
+   title:'关 灯',
+   text:'你把每一间屋子的灯都关掉了。黑暗里雨声变得很大，大得像有人贴在你身后呼吸。你没有回头，因为回头就得承认那不是雨。'},
+];
+// 周六这一章的结局不走上面那张表：afterBeat() 里有 `if (S.day) return`，
+// 白天永远不扫 ENDINGS（当初就是为了不让夜里这三个结局跑出来抢戏）。
+// 所以这一个由剧情自己在结尾直接 showEnding()。
+const END_BEDSIDE = {
+  id: 'bedside',
+  title: '靠 墙 那 一 侧',
+  text: '你把地板擦干净了，因为你知道抹布在哪儿。你躺回了靠墙那一侧，'
+      + '因为你还记得该往哪边翻身。这间屋子里没有一样东西是你不熟的——'
+      + '包括地板上那个人，她来得比你晚，走得比你早。'
+      + '你终于又睡在这张床上了。这一次，半夜不会再有人回来。',
+};
+// 另一条路的收尾：手机没掏出来，谁都没发现她，她自己走出了那栋房子。
+// 这张卡不收口，是个入口——出租启事、隔着一堵墙的隔壁、下一章要钻的那个洞。
+const END_TOLET = {
+  id: 'tolet',
+  title: '隔 一 堵 墙',
+  text: '你什么都没做。你听着他们，听着他走，听着她走，然后自己从那张床底下爬了出来，'
+      + '把被子拉平，关上他家的门。街上没有人看见你。'
+      + '走到人行道上你才发现隔壁那户的窗玻璃里贴了一张纸：待租。'
+      + '你站在那儿把电话号码看了很久，久到路灯下的字都记住了。'
+      + '他家和那户中间只隔着一堵墙。你想知道那堵墙有多厚。',
+  next: () => chapter2Start(),
+};
+// 第二章的收口。这一张才是真的终局：她终于知道了自己在这件事里是什么位置——
+// 不是看的人，是被看的那一个，而且已经被看了四十七次。
+const END_47 = {
+  id: 'fortyseven',
+  title: '四 十 七 张',
+  text: '鞋盒里没有一张是他们两个。四十七张里的人全是你：站在站台上、隔着车窗、'
+      + '在货架后面、睡着的时候。最上面那张压着一行字：她还会来的。'
+      + '你在他的床底下数完了它们，然后床边的地板上落下一片影子，倒过来的一张脸伸了进来。'
+      + '她没有叫。她笑了——她等这一下等了很久，因为她比你更早知道你会躲在哪里。',
+};
+let node = 'living';
+// ——— 存档 ———
+// 刷新不该把人踢回开头：进度写在 localStorage 里，重开页面就落回当前场景。
+// 存的是"状态"而不是"过程"：正在放的视频、正在说的台词不恢复，那些是一次性的演出。
+const SAVE_KEY = 'chimi.save.v1';
+let SAVED = null;
+try { SAVED = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { SAVED = null; }
+if (SAVED && SAVED.v === 1) {
+  Object.assign(S, SAVED.S || {});
+  if (SAVED.node && NODES[SAVED.node]) node = SAVED.node;
+  for (const k in SAVED.rooms || {}) if (NODES[k]) Object.assign(NODES[k], SAVED.rooms[k]);
+  // 电视"正在播"是一段演出而不是状态：磁带没在跑、声音也没起来，
+  // 读档时把它退回雪花（图里本来的样子），关机(2)才是真的该留下来。
+  for (const k in NODES) if (NODES[k].tvState === 1) NODES[k].tvState = 0;
+  // 他已经出门了：门外那张图得换成空的那张，别让他又站回门口。
+  // 已经从床底爬出来了（"手机没掏出来"那支）：门外换成夜里那张。
+  if (has('heLeft')) NODES.outside.pano = PANO_OUT_EMPTY;
+  if (has('outOfBed')) NODES.outside.pano = PANO_OUT_DUSK;
+}
+function snapshot() {
+  const rooms = {};
+  for (const k in NODES) rooms[k] = {off: NODES[k].off, tvState: NODES[k].tvState};
+  return {
+    v: 1, node, S, rooms,
+    gStep: typeof gStep === 'number' ? gStep : 0,
+    view: [viewU, viewV],
+  };
+}
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot()));
+  } catch (e) { /* 隐私模式下写不了就算了，不该因为存档挂掉游戏 */ }
+}
+function restartGame() {
+  removeEventListener('beforeunload', save);       // 别在卸载的路上又把刚清掉的进度写回去
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  location.reload();
+}
+window.restartGame = restartGame;                 // 结局卡那个"再走一遍"按钮要用
+addEventListener('beforeunload', save);           // 顺手把视角方向也带上
+const app = document.getElementById('app');
+const coordEl = document.getElementById('coord');
+const storyEl = document.getElementById('story');
+const enterEl = document.getElementById('enter');
+const crossEl = document.getElementById('crosshair');
+const endEl = document.getElementById('ending');
+
+// ——— 声音：全部用 Web Audio 现场合成，不依赖任何音频文件 ———
+// 雨 = 白噪声过带通+低通；房间嗡鸣 = 两个失谐正弦；脚步/开关/风声 = 噪声包络。
+let AC = null, master = null, rainGain = null, droneGain = null, windGain = null, muted = false;
+// 举起手机的时候，环境声整体压下去，让手机里那段录像的声音成为唯一在响的东西
+let duck = 1;
+function initAudio() {
+  if (AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain(); master.gain.value = 0.85; master.connect(AC.destination);
+
+  rainGain = AC.createGain(); rainGain.gain.value = 0;
+  rainGain.connect(master);
+  loadRain();                                       // 真实雨声录音，异步拿
+
+  droneGain = AC.createGain(); droneGain.gain.value = 0;
+  for (const f of [51, 51.7]) {                     // 差频 0.7Hz，产生缓慢的起伏
+    const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    o.connect(droneGain); o.start();
+  }
+  droneGain.connect(master);
+  makeWind();
+  applyAudioProfile();
+}
+// 户外的底噪：合成的风。白噪声过低通 480Hz，截止频率被一个 0.07Hz 的慢正弦推着走，
+// 于是有一阵一阵的阵风感。刻意做得很闷、没有高频细节——那样才像树叶和远处街道，
+// 而不是雨。（拿 rain.mp3 压低了充当户外环境声是不行的，那是真的雨声录音。）
+function makeWind() {
+  windGain = AC.createGain(); windGain.gain.value = 0;
+  const n = Math.floor(AC.sampleRate * 4);
+  const buf = AC.createBuffer(1, n, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < n; i++) {                       // 一阶低通过的噪声，本身就偏暗
+    last = last * 0.86 + (Math.random() * 2 - 1) * 0.14;
+    d[i] = last;
+  }
+  const s = AC.createBufferSource(); s.buffer = buf; s.loop = true;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 480; lp.Q.value = 0.4;
+  const lfo = AC.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.07;
+  const lfoAmt = AC.createGain(); lfoAmt.gain.value = 210;
+  lfo.connect(lfoAmt); lfoAmt.connect(lp.frequency);
+  s.connect(lp); lp.connect(windGain); windGain.connect(master);
+  s.start(); lfo.start();
+}
+// audio/rain.mp3 只有 3 秒，直接 loop 会听出周期。
+// 办法是同一段素材开两路：一路正常速度，一路 0.83 倍速并且错开半段起播，
+// 两路的接缝永远不重合，听上去就是一片连不断的雨。
+// loopStart/loopEnd 往里缩 30ms 是为了跳掉 mp3 编码器在首尾垫的静音，不然每圈一个咔哒。
+async function loadRain() {
+  try {
+    const r = await fetch('audio/rain.mp3');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await AC.decodeAudioData(await r.arrayBuffer());
+    const pad = 0.03, dur = buf.duration;
+    for (const [rate, off] of [[1, 0], [0.83, dur / 2]]) {
+      const s = AC.createBufferSource();
+      s.buffer = buf; s.loop = true;
+      s.loopStart = pad; s.loopEnd = Math.max(pad + 0.1, dur - pad);
+      s.playbackRate.value = rate;
+      const g = AC.createGain(); g.gain.value = 0.7;   // 两路叠加，各留 0.7 免得翻倍
+      s.connect(g); g.connect(rainGain);
+      s.start(0, pad + off);
+    }
+  } catch (e) {
+    console.warn('雨声没加载上，房间会是安静的：', e);
+  }
+}
+function ramp(param, v, sec = 0.8) {
+  if (param && AC) param.setTargetAtTime(v, AC.currentTime, sec / 3);
+}
+function applyAudioProfile() {                      // 每个房间的声音底噪不同
+  if (!AC) return;
+  const n = NODES[node];
+  // 这段录音本身很轻（平均 -33dB），所以 rain 值比合成噪声时代大得多才听得见
+  // 白天雨已经停了，只剩房间自己的低频嗡鸣
+  ramp(rainGain.gain, (n.rain ?? 0.4) * (n.off ? 1.3 : 1) * duck * (S.day ? 0 : 1));
+  ramp(droneGain.gain, (n.drone ?? 0.05) * (n.off ? 1.9 : 1) * duck * (S.day ? 0.5 : 1));
+  ramp(windGain.gain, (n.wind ?? 0) * duck);            // 只有户外那一节点有风
+  // 走出客厅后电视还在响，只是隔了一道墙
+  // 那台电视只在她自己那套房子里响。出了防盗门（门外/他家）就该听不见了，
+  // 隔着一条街还能听见客厅那盘磁带是说不通的。
+  const inFlat = node === 'living' || node === 'bedroom' || node === 'corridor';
+  if (tvGain && tvSrc) ramp(tvGain.gain, node === 'living' ? 0.55 : inFlat ? 0.16 : 0, 1.0);
+}
+
+function noiseBurst(dur, freq, q, peak, type = 'bandpass') {
+  const n = Math.max(1, Math.floor(AC.sampleRate * dur));
+  const b = AC.createBuffer(1, n, AC.sampleRate);
+  const c = b.getChannelData(0);
+  for (let i = 0; i < n; i++) c[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+  const s = AC.createBufferSource(); s.buffer = b;
+  const f = AC.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = AC.createGain(); g.gain.value = peak;
+  s.connect(f); f.connect(g); g.connect(master); s.start();
+  return {f, g, dur};
+}
+function blip(kind) {
+  if (!AC || muted) return;
+  const t = AC.currentTime;
+  if (kind === 'click') {                           // 拉线开关：一声脆响加一点电流声
+    noiseBurst(0.05, 2600, 3, 0.5);
+    const o = AC.createOscillator(); o.type = 'square'; o.frequency.value = 130;
+    const g = AC.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.1);
+  } else if (kind === 'note') {                     // 看到东西：极轻的一下低频点头
+    const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = 190;
+    const g = AC.createGain(); g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.06, t + 0.04); g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.55);
+  } else if (kind === 'step') {                     // 脚步：闷响，音高随机一点
+    noiseBurst(0.13, 240 + Math.random() * 120, 1.2, 0.34, 'lowpass');
+  } else if (kind === 'whoosh') {                   // 过门：噪声扫频
+    const {f} = noiseBurst(1.1, 400, 0.8, 0.2);
+    f.frequency.setValueAtTime(300, t);
+    f.frequency.linearRampToValueAtTime(1500, t + 0.5);
+    f.frequency.linearRampToValueAtTime(300, t + 1.1);
+  } else if (kind === 'ring') {                     // 回铃音：450Hz，一秒响一秒停
+    for (let i = 0; i < 2; i++) {
+      const t0 = t + i * 1.6;
+      const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = 450;
+      const g = AC.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.13, t0 + 0.02);
+      g.gain.setValueAtTime(0.13, t0 + 0.95);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.05);
+      o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 1.1);
+    }
+  } else if (kind === 'hangup') {                   // 被挂断：一声短促的高音
+    const o = AC.createOscillator(); o.type = 'square'; o.frequency.value = 620;
+    const g = AC.createGain(); g.gain.setValueAtTime(0.08, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.22);
+  } else if (kind === 'sting') {                    // 结局：低频下坠
+    const o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(32, t + 2.4);
+    const g = AC.createGain(); g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.3, t + 0.6); g.gain.exponentialRampToValueAtTime(0.001, t + 3.2);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 3.3);
+  }
+}
+
+// ——— 通话里的人声 ———
+// 他的声音是从听筒里出来的：高通 320 / 低通 3400，压成一只小喇叭的带宽。
+// 你自己的声音是在这个房间里说出口的，所以不过滤，只轻微压一点音量。
+// 文件缺了就静默降级——字幕照走，不会卡住整段流程。
+let voxPhoneIn = null, voxRoomIn = null;
+const VOXBUF = {};
+function makeVoxChains() {
+  if (voxPhoneIn) return;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 320;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3400;
+  const g = AC.createGain(); g.gain.value = 1.2;
+  hp.connect(lp); lp.connect(g); g.connect(master);
+  voxPhoneIn = hp;
+  const rg = AC.createGain(); rg.gain.value = 0.95; rg.connect(master);
+  voxRoomIn = rg;
+}
+// 最近起的那一句配音。字幕被点着快进的时候要把它收掉（stopVox），
+// 不然上一句的人声会压在下一句字幕上。
+let curVox = null;
+async function vox(name) {
+  if (!AC) return 0;
+  makeVoxChains();
+  const buf = await voxLoad(name);
+  if (!buf) return 0;
+  const g = AC.createGain();
+  g.gain.value = 1;
+  g.connect(name.startsWith('jude') ? voxPhoneIn : voxRoomIn);
+  const s = AC.createBufferSource(); s.buffer = buf;
+  s.connect(g);
+  s.start();
+  const h = {s, g};
+  curVox = h;
+  s.onended = () => { if (curVox === h) curVox = null; };
+  return buf.duration;
+}
+function stopVox(fade = 0.18) {
+  const h = curVox;
+  if (!h) return;
+  curVox = null;
+  h.g.gain.cancelScheduledValues(AC.currentTime);
+  h.g.gain.setValueAtTime(h.g.gain.value, AC.currentTime);
+  h.g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + fade);
+  setTimeout(() => { try { h.s.stop(); } catch (e) {} h.g.disconnect(); }, fade * 1000 + 120);
+}
+// 床底那段的喘息、口袋里的手机震动，都是**循环**播放的，一直放到剧情叫停，
+// 所以不能走 vox()（那个放一遍就完）。这里按名字存着可停的循环源。
+// opt.vol 音量，opt.fade 淡入/淡出秒数（默认 1.2；"手机被抽出口袋"那一下要给 0.04，
+// 几乎瞬切，不然听不出"突然变响"），opt.onStart 是给"必须和出声那一刻对齐"的东西用的
+//（床震的相位就挂在这儿）。
+const LOOPS = {};
+async function loopSfx(name, on, opt = {}) {
+  if (!AC) return;
+  const fade = opt.fade ?? 1.2;
+  if (on) {
+    if (LOOPS[name]) return;
+    makeVoxChains();
+    const buf = await voxLoad(name);
+    if (!buf) return;
+    if (LOOPS[name]) return;                   // 解码这段时间里可能已经被别处起过了
+    const g = AC.createGain();
+    g.gain.value = 0.0001;
+    g.connect(voxRoomIn);
+    const s = AC.createBufferSource();
+    s.buffer = buf; s.loop = true; s.connect(g);
+    s.start();
+    g.gain.linearRampToValueAtTime(opt.vol ?? 1, AC.currentTime + fade);
+    LOOPS[name] = {s, g};
+    opt.onStart?.();
+  } else {
+    const L = LOOPS[name];
+    if (!L) return;
+    delete LOOPS[name];
+    L.g.gain.cancelScheduledValues(AC.currentTime);
+    L.g.gain.setValueAtTime(L.g.gain.value, AC.currentTime);
+    L.g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + fade);
+    setTimeout(() => { try { L.s.stop(); } catch (e) {} L.g.disconnect(); },
+               fade * 1000 + 200);
+  }
+}
+// 床震必须等喘息真的出声了才起——loopSfx 里有 fetch + decodeAudioData，
+// 第一次可能要几百毫秒，直接同一行设 shakeTarget 的话床会先抖起来、声音后到。
+// 相位和幅度都在 onStart（也就是 source.start() 那一刻）归零。
+// 另外进床底之前就把这两段预解码好（见 duckUnderBed），正常情况下这里几乎不等。
+async function startBedShake(amp) {
+  await loopSfx('breath', true, {
+    onStart: () => { shakeT0 = performance.now(); shakeAmp = 0; },
+  });
+  shakeTarget = amp;
+}
+// 警笛。由远及近不是把音量拉大就完了——远处的声音是"闷 + 小 + 干"，
+// 近处才是"亮 + 大 + 有回声"。所以这里自己搭一条链：低通 + 音量一起走。
+// 四个折点而不是两个：一躺下就得**听得见**（很轻，但在），中段几乎不涨——
+// 字幕那句「很远的地方有警笛」得站得住脚；最后那一段才真正逼上来。
+// 素材本身只有 10.8 秒，循环着放，靠这两条曲线撑出"越来越近"。
+// 走 master 而不是 voxRoomIn：它不是房间里的声音，是从窗外一路开过来的。
+let sirenNode = null;
+async function startSiren(sec = 44) {
+  if (!AC || sirenNode) return;
+  const buf = await voxLoad('siren');
+  if (!buf || sirenNode) return;
+  const lp = AC.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 500;
+  lp.Q.value = 0.7;
+  const g = AC.createGain();
+  g.gain.value = 0.0001;
+  const s = AC.createBufferSource();
+  s.buffer = buf; s.loop = true;
+  s.connect(lp); lp.connect(g); g.connect(master);
+  s.start();
+  const t = AC.currentTime;
+  // 0.6 秒就爬到"隔着几条街听得见"的音量，之后一路很慢，最后 18% 冲上来
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.030, t + 0.6);
+  g.gain.exponentialRampToValueAtTime(0.120, t + sec * 0.62);
+  g.gain.exponentialRampToValueAtTime(0.340, t + sec * 0.82);
+  g.gain.exponentialRampToValueAtTime(0.850, t + sec);
+  lp.frequency.setValueAtTime(500, t);
+  lp.frequency.exponentialRampToValueAtTime(1100, t + sec * 0.62);
+  lp.frequency.exponentialRampToValueAtTime(2600, t + sec * 0.82);
+  lp.frequency.exponentialRampToValueAtTime(7500, t + sec);
+  sirenNode = {s, g, lp};
+}
+function stopSiren(fade = 2.2) {
+  const n = sirenNode;
+  if (!n) return;
+  sirenNode = null;
+  n.g.gain.cancelScheduledValues(AC.currentTime);
+  n.g.gain.setValueAtTime(n.g.gain.value, AC.currentTime);
+  n.g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + fade);
+  setTimeout(() => {
+    try { n.s.stop(); } catch (e) {}
+    n.g.disconnect(); n.lp.disconnect();
+  }, fade * 1000 + 200);
+}
+async function voxLoad(name) {
+  if (!AC) return null;
+  if (VOXBUF[name] === undefined) {
+    try {
+      const r = await fetch(`audio/${name}.mp3`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      VOXBUF[name] = await AC.decodeAudioData(await r.arrayBuffer());
+    } catch (e) {
+      VOXBUF[name] = null;
+      console.warn('这句配音没加载上，只有字幕：', name, e.message || e);
+    }
+  }
+  return VOXBUF[name];
+}
+
+
+
+
+// ——— 电视里的歌 ———
+// 走一条独立的链路：源 -> 高通 260Hz -> 低通 3.6kHz -> tvGain -> master。
+// 两个滤波器是为了让它听起来是从一只小喇叭里出来的，而不是贴着耳朵放。
+// 挂在 master 上，所以 M 静音一样管得住它。
+// 音频文件要你自己放到 audio/forever.mp3——我没法替你去拿一首有版权的商业录音。
+// 文件不在就退回一段合成的哼唱旋律当占位，明显是假的，但不会静场。
+let tvGain = null, tvSrc = null, tvBuf = null, tvReal = false;
+const TV_START = 30;                                // 从第 30 秒进（前奏跳掉），循环也从这里往后转
+function makeTvChain() {
+  if (tvGain) return;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 260;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3600;
+  tvGain = AC.createGain(); tvGain.gain.value = 0;
+  hp.connect(lp); lp.connect(tvGain); tvGain.connect(master);
+  tvGain.inNode = hp;
+}
+function makeTune() {                               // 占位：一段缓慢的小调哼唱，带颤音
+  const sr = AC.sampleRate, beat = 60 / 76;
+  const notes = [0, 3, 7, 10, 7, 3, 0, -2, 0, 3, 7, 12, 10, 7, 3, 0];
+  const buf = AC.createBuffer(1, Math.ceil(notes.length * beat * sr), sr);
+  const d = buf.getChannelData(0);
+  notes.forEach((semi, n) => {
+    const f = 220 * Math.pow(2, semi / 12);
+    const t0 = Math.floor(n * beat * sr), len = Math.floor(beat * 1.6 * sr);
+    for (let i = 0; i < len && t0 + i < d.length; i++) {
+      const t = i / sr;
+      const env = Math.min(1, t / 0.06) * Math.exp(-t * 1.6);
+      const vib = 1 + 0.012 * Math.sin(2 * Math.PI * 5.2 * t);   // 颤音，像人声而不是电子音
+      let s = 0;
+      for (const [h, a] of [[1, 1], [2, 0.34], [3, 0.16], [4, 0.07]])
+        s += a * Math.sin(2 * Math.PI * f * h * vib * t);
+      d[t0 + i] += s * env * 0.16;
+    }
+  });
+  return buf;
+}
+async function loadSong(urls) {
+  for (const url of urls) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;                        // 没这个文件，试下一个后缀
+      tvBuf = await AC.decodeAudioData(await r.arrayBuffer());
+      tvReal = true;
+      console.log('电视歌曲已载入', url, `${tvBuf.duration.toFixed(1)}s`);
+      return;
+    } catch (e) {
+      console.log(url, '解码失败（浏览器不认这个格式？）', e.message || e);
+    }
+  }
+  tvBuf = makeTune(); tvReal = false;
+  console.log('audio/ 下没有能解码的 forever.*，电视先用合成的占位旋律。'
+    + '支持 mp3 / m4a / flac / wav / ogg；.ncm 不行，浏览器解不开。');
+}
+function tvAudio(on) {
+  if (!AC) return;
+  makeTvChain();
+  if (!on) {
+    ramp(tvGain.gain, 0, 0.6);
+    if (tvSrc) { const s = tvSrc; tvSrc = null; setTimeout(() => s.stop(), 900); }
+    return;
+  }
+  const start = () => {
+    if (tvSrc || !tvBuf) return;
+    const s = tvSrc = AC.createBufferSource();
+    s.buffer = tvBuf; s.loop = false;                // 一次开机只放一遍，放完就停
+    // 从第 30 秒进，前奏跳掉。占位的合成旋律只有十几秒，够不到 30 秒就老实从头放。
+    const from = tvBuf.duration > TV_START + 8 ? TV_START : 0;
+    s.connect(tvGain.inNode);
+    s.start(0, from);
+    // 自然放完之后把 tvSrc 归位，这样下次再开电视是新的一遍，而不是被当成"已经在放"
+    s.onended = () => { if (tvSrc === s) tvSrc = null; };
+    // 渐入：先把增益按到 0，再用 3.5 秒爬上来，像是隔着房间慢慢听清
+    tvGain.gain.cancelScheduledValues(AC.currentTime);
+    tvGain.gain.setValueAtTime(0, AC.currentTime);
+    ramp(tvGain.gain, 0.55, 3.5);          // 静音由 master 统一管，这里不用管 muted
+  };
+  if (tvBuf) start();
+  else loadSong(NODES.living.tv.songs).then(start);
+}
+
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, 1, 0.01, 100);
+
+// 房间壳：地面和天花板是平面，四周默认是圆柱面。
+// 如果某个节点提供了 plan（楼层平面多边形，逐个顶点给"方位 u + 水平距离 d 米"），
+// 就用真正的平面墙，墙角扎在对的位置——这是唯一能真正消除走动变形的办法。
+// 没有 plan 就退回圆柱：圆柱没有棱，不会出现假折痕，但墙面是弯的。
+const ROOM = {up: 1.1, down: 1.6, r: 3.0};   // 视高 1.6m，天花板高 1.1m，兜底墙距 3m
+const cross2 = (ax, az, bx, bz) => ax * bz - az * bx;
+function planRadius(plan, dx, dz) {          // 从原点沿 (dx,dz) 打到多边形墙的水平距离
+  let best = Infinity;
+  for (let i = 0; i < plan.length; i++) {
+    const p = plan[i], q = plan[(i + 1) % plan.length];
+    const pa = p.u * Math.PI * 2, qa = q.u * Math.PI * 2;
+    const ax = -Math.cos(pa) * p.d, az = Math.sin(pa) * p.d;
+    const ex = -Math.cos(qa) * q.d - ax, ez = Math.sin(qa) * q.d - az;
+    const den = cross2(dx, dz, ex, ez);
+    if (Math.abs(den) < 1e-9) continue;
+    const t = cross2(ax, az, ex, ez) / den;
+    const s = cross2(ax, az, dx, dz) / den;
+    if (t > 1e-4 && s >= -1e-6 && s <= 1 + 1e-6 && t < best) best = t;
+  }
+  return isFinite(best) ? best : ROOM.r;
+}
+function roomT(d, plan) {                    // 沿方向 d 打到房间壳的距离
+  const horiz = Math.hypot(d.x, d.z);
+  const tw = horiz > 1e-6
+    ? (plan ? planRadius(plan, d.x / horiz, d.z / horiz) : ROOM.r) / horiz
+    : Infinity;
+  const ty = (d.y > 0 ? ROOM.up : ROOM.down) / Math.max(Math.abs(d.y), 1e-6);
+  return Math.min(tw, ty);
+}
+function makeRoomGeometry(plan) {
+  const g = new THREE.SphereGeometry(1, 192, 128);     // 分段要密，否则地面和墙的交线会被切掉
+  const p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const t = roomT(v, plan);
+    p.setXYZ(i, v.x * t, v.y * t, v.z * t);
+  }
+  p.needsUpdate = true;
+  g.computeBoundingSphere();
+  return g;
+}
+
+// ---- 电视画面 ----
+// 三张帧竖着拼成一条"胶片"（512x1239，每格 512x413），着色器按 uTvFrame 取其中一格。
+// 用硬切而不是交叉溶解：两张静态人像交叉溶解看着像幻灯片，硬切加一点行抖动才像播放中的信号切镜头。
+const TV_N = 3;
+const tvStrip = new THREE.TextureLoader().load('images/tv-singer-strip.png',
+  undefined, undefined, () => console.log('电视胶片加载失败'));
+tvStrip.colorSpace = THREE.SRGBColorSpace;   // 交给 three 转色彩空间，着色器里拿到的已是线性
+tvStrip.wrapS = tvStrip.wrapT = THREE.ClampToEdgeWrapping;
+
+let panoSize = '加载中';
+const texCache = {};
+function loadPano(url) {
+  if (texCache[url]) return texCache[url];
+  const t = new THREE.TextureLoader().load(url, tt => {
+    const max = renderer.capabilities.maxTextureSize;
+    panoSize = `${tt.image.width}x${tt.image.height}`;
+    const ratio = tt.image.width / tt.image.height;
+    if (Math.abs(ratio - 2) > 0.01) panoSize += ` ⚠ 比例 ${ratio.toFixed(2)}:1 不是 2:1`;
+    if (tt.image.width > max) panoSize += ` ⚠ 超过本机贴图上限 ${max}`;
+  }, undefined, () => { panoSize = `⚠ ${url} 加载失败`; });
+  t.colorSpace = THREE.SRGBColorSpace;
+  texCache[url] = t;
+  return t;
+}
+// 一个"房间"= 一份房间壳网格 + 自己的贴图和灯光 uniform。
+// 换房间时会同时存在两个房间（旧的淡出、新的淡入），所以每个都要独立的 uniform。
+// 每个节点的 plan 不同，网格也就不同，按节点缓存。
+const geoCache = {};
+const geoFor = name => geoCache[name] || (geoCache[name] = makeRoomGeometry(NODES[name].plan));
+
+// ---- 真实深度 ----
+// tools/pano_depth.py 用单目深度模型给每张全景图估了一份深度图：8bit 存的是视差
+// 在本图范围内的归一化值（近处灰阶密），配套 json 给出米制端点。有了逐像素距离，
+// 房间壳就不再是"圆筒 + 天花板地板"的粗胚，而是真实的家具轮廓，走动时的视差才对。
+// 只用 reliable 的：走廊那种窄过道地面约束不成立，脚本里定标失败、绝对尺度是猜的，
+// 用它反而比解析壳更歪，所以就让它继续用壳。
+const DEPTH = {};                // name -> {at(u,vImg)}，有条目就说明这个房间有可用深度
+const DEPTH_R = 0.45;            // 有真深度时允许的走动半径（米）
+function depthSampler(px, W, H, meta) {
+  const lo = 1 / meta.maxDepth, hi = 1 / meta.minDepth;
+  return (u, v) => {             // v 按图像算：0 是图顶（天顶）
+    const x = u * W - 0.5, y = v * H - 0.5;
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const fx = x - x0, fy = y - y0;
+    const xa = ((x0 % W) + W) % W, xb = (((x0 + 1) % W) + W) % W;   // 横向环绕，接缝处不断
+    const ya = Math.min(Math.max(y0, 0), H - 1), yb = Math.min(Math.max(y0 + 1, 0), H - 1);
+    const g = (xx, yy) => px[(yy * W + xx) * 4];
+    const top = g(xa, ya) * (1 - fx) + g(xb, ya) * fx;
+    const bot = g(xa, yb) * (1 - fx) + g(xb, yb) * fx;
+    const disp = lo + (top * (1 - fy) + bot * fy) / 255 * (hi - lo);
+    return Math.min(Math.max(1 / Math.max(disp, 1e-6), 0.35), 12);
+  };
+}
+function makeDepthGeometry(at) {
+  const g = new THREE.SphereGeometry(1, 256, 160);
+  const p = g.attributes.position, uv = g.attributes.uv, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    // 用网格自己的 uv 去查深度，保证和贴图采样的是同一个像素，不会错位
+    const t = at(uv.getX(i), 1 - uv.getY(i));
+    p.setXYZ(i, v.x * t, v.y * t, v.z * t);
+  }
+  p.needsUpdate = true;
+  g.computeBoundingSphere();
+  return g;
+}
+function loadDepth(name) {
+  const base = NODES[name].pano.replace('pano-', 'depth-');
+  fetch(base.replace(/\.png$/, '.json'))
+    .then(r => r.ok ? r.json() : null)
+    .then(meta => {
+      if (!meta) return;
+      if (!meta.reliable) { console.log(name, '深度图定标不可靠，继续用解析房间壳'); return; }
+      const im = new Image();
+      im.onload = () => {
+        const c = Object.assign(document.createElement('canvas'), {width: im.width, height: im.height});
+        const cx = c.getContext('2d');
+        cx.drawImage(im, 0, 0);
+        const px = cx.getImageData(0, 0, im.width, im.height).data;   // 需要同源，用 http 打开而不是 file://
+        const at = depthSampler(px, im.width, im.height, meta);
+        DEPTH[name] = {at};
+        const old = geoCache[name];
+        geoCache[name] = makeDepthGeometry(at);
+        for (const r of [A, B]) if (r && r.name === name) r.mesh.geometry = geoCache[name];
+        old?.dispose();
+        NODES[name].walkR = DEPTH_R;
+        if (name === node) buildSpots(node);      // 热点要重新贴到真实的墙面上
+        console.log(name, `深度已载入 ${meta.minDepth}~${meta.maxDepth}m，走动半径放宽到 ${DEPTH_R}m`);
+      };
+      im.onerror = () => console.log(name, '深度图加载失败', base);
+      im.src = base;
+    })
+    .catch(() => {});
+}
+function makeRoom(nodeName) {
+  const n = NODES[nodeName];
+  const uOff = {value: n.off};
+  const uLampUV = {value: new THREE.Vector2(n.lamp ? n.lamp.u : 0.5, n.lamp ? 1 - n.lamp.v : 0.5)};
+  const uHasLamp = {value: n.lamp ? 1 : 0};
+  // 电视：矩形给的是贴图 uv（v 向上），所以要把量出来的图像 v 翻过来
+  const uTvRect = {value: n.tv
+    ? new THREE.Vector4(n.tv.u0, 1 - n.tv.v1, n.tv.u1, 1 - n.tv.v0)
+    : new THREE.Vector4(0, 0, 0, 0)};
+  const uTvMap = {value: tvStrip};
+  const uTvPlay = {value: 0}, uTvDark = {value: 0}, uTvFrame = {value: 0}, uTime = {value: 0};
+  const uDay = {value: S.day ? 1 : 0};
+  const uDayMap = {value: loadPano(n.panoDay || n.pano)};
+  // 关灯效果：在 MeshBasicMaterial 的 map 采样之后注入一段处理，
+  // 保留 three 自己的色彩空间管线（此处 diffuseColor 已是线性空间，做光照运算才正确）。
+  const mat = new THREE.MeshBasicMaterial({map: loadPano(n.pano), side: THREE.BackSide, depthTest: false});
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uOff = uOff;
+    sh.uniforms.uLampUV = uLampUV;
+    sh.uniforms.uHasLamp = uHasLamp;
+    sh.uniforms.uTvRect = uTvRect;
+    sh.uniforms.uTvMap = uTvMap;
+    sh.uniforms.uTvPlay = uTvPlay;
+    sh.uniforms.uTvDark = uTvDark;
+    sh.uniforms.uTvFrame = uTvFrame;
+    sh.uniforms.uTime = uTime;
+    sh.uniforms.uDay = uDay;
+    sh.uniforms.uDayMap = uDayMap;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', `uniform float uOff;
+uniform vec2 uLampUV;
+uniform float uHasLamp;
+uniform vec4 uTvRect;
+uniform sampler2D uTvMap;
+uniform float uTvPlay;
+uniform float uTvDark;
+uniform float uTvFrame;
+uniform float uTime;
+uniform float uDay;
+uniform sampler2D uDayMap;
+void main() {`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  #ifdef USE_MAP
+  {
+    vec3 lit = diffuseColor.rgb;
+    // 到台灯的角距离：水平方向要取环绕最短路径，并按纬度收缩
+    float du = abs(vMapUv.x - uLampUV.x);
+    du = min(du, 1.0 - du);
+    float theta = (1.0 - vMapUv.y) * 3.14159265;
+    float ang = length(vec2(du * 6.2831853 * max(sin(theta), 0.15),
+                            (vMapUv.y - uLampUV.y) * 3.14159265));
+    float pool = exp(-ang * ang / (2.0 * 0.55 * 0.55)) * uHasLamp; // 台灯照到的范围
+    // 暖色像素判定为受台灯影响，冷蓝像素（窗外城市光）关灯后仍应保留
+    float warmth = clamp((lit.r - lit.b) * 3.0, 0.0, 1.0);
+    vec3 off = max(lit - lit * pool * 0.95, 0.0);          // 扣掉台灯的贡献
+    off *= mix(0.50, 0.16, warmth);                        // 整体压暗，暖处压得更狠
+    float lum = dot(off, vec3(0.2126, 0.7152, 0.0722));
+    off = mix(off, vec3(lum) * vec3(0.50, 0.68, 1.0), 0.45); // 剩下的光偏冷
+    diffuseColor.rgb = mix(lit, off, uOff);
+
+    // 白天（周六早上）：跟另一张"白天版"全景图交叉溶解。
+    // 窗外的蓝色夜景和玻璃上的雨痕是画进夜景图里的，再怎么提亮也去不掉，
+    // 所以白天版是另做的一张图（tools/make_day_panos.py：玻璃换成过曝的暖白天光、
+    // 全图压成暖黄白、窗口往房间里洒光）。这里只负责把两张图混起来。
+    if (uDay > 0.001) {
+      vec3 dayTex = texture2D(uDayMap, vMapUv).rgb;
+      diffuseColor.rgb = mix(diffuseColor.rgb, dayTex, uDay);
+    }
+
+
+
+    // 电视屏幕。放在关灯处理之后：屏幕是自己发光的，不该被"关灯"压暗。
+    if (uTvRect.z > uTvRect.x) {
+      vec2 su = (vMapUv - uTvRect.xy) / (uTvRect.zw - uTvRect.xy);
+      if (su.x > 0.0 && su.x < 1.0 && su.y > 0.0 && su.y < 1.0) {
+        vec2 fu = vec2(su.x, 1.0 - su.y);                  // 屏幕 uv 向上，胶片图向下
+        float roll = fract(uTime * 0.11);                  // 缓慢上滚的一条亮带
+        float band = exp(-pow((fract(fu.y - roll + 1.0) - 0.5) * 7.0, 2.0));
+        fu.x += band * 0.004 + sin(uTime * 37.0 + fu.y * 90.0) * 0.0008;   // 行抖动
+        // 取胶片里的第 uTvFrame 格。three 默认 flipY=true，贴图 v=1 才是图的顶端，
+        // 所以第 f 格的顶端在 v = 1 - f/3，往下走 v 减小。
+        vec3 vid = texture2D(uTvMap, vec2(fu.x, 1.0 - (fu.y + uTvFrame) / 3.0)).rgb;
+        float scan = 0.86 + 0.14 * sin(fu.y * 900.0);      // 扫描线
+        float flick = 0.93 + 0.07 * sin(uTime * 43.0) + 0.04 * sin(uTime * 7.3);
+        vid *= scan * flick * (1.0 + band * 0.5);
+        float vig = smoothstep(0.0, 0.10, min(min(su.x, 1.0 - su.x), min(su.y, 1.0 - su.y)));
+        vid = vid * vig + vec3(0.02, 0.03, 0.05) * vig;    // 边角压暗 + 显像管本身的辉光
+        vec3 dark = diffuseColor.rgb * 0.06 + vec3(0.008, 0.010, 0.016);   // 关机只剩一层反光
+        diffuseColor.rgb = mix(diffuseColor.rgb, dark, uTvDark);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vid * 1.35, uTvPlay);
+      }
+    }
+  }
+  #endif`);
+  };
+  const mesh = new THREE.Mesh(geoFor(nodeName), mat);
+  return {name: nodeName, mesh, mat, uOff, uLampUV, uHasLamp, uTvPlay, uTvDark, uTvFrame, uTvMap, uTime, uDay, uDayMap};
+}
+let A = makeRoom(node);          // 当前所在房间（读档之后可能不是客厅）
+let B = null;                    // 过渡中正在淡入的房间
+scene.add(A.mesh);
+// 三张白天版全景图提前解码好：天亮是渐变的，等到那一刻再去下载会闪一下黑
+for (const k in NODES) if (NODES[k].panoDay) loadPano(NODES[k].panoDay);
+
+// (u,v) → 单位方向向量，与 SphereGeometry 的 UV 排布一致
+const uvToVec = (u, v) => {
+  const phi = u * Math.PI * 2, theta = v * Math.PI;
+  return new THREE.Vector3(-Math.cos(phi)*Math.sin(theta), Math.cos(theta), Math.sin(phi)*Math.sin(theta));
+};
+// 热点要贴在房间内壁上，不能再用固定半径，否则摄像机一动热点就会飘。
+// 有真深度就查深度图，没有就退回解析壳。
+const onWall = (u, v, k = 0.94) => {
+  const d = uvToVec(u, v);
+  const t = DEPTH[node] ? DEPTH[node].at(u, v) : roomT(d, NODES[node].plan);
+  return d.multiplyScalar(t * k);
+};
+const vecToUV = d => {
+  const n = d.clone().normalize();
+  let phi = Math.atan2(n.z, -n.x);
+  if (phi < 0) phi += Math.PI * 2;
+  return {u: phi / (Math.PI * 2), v: Math.acos(THREE.MathUtils.clamp(n.y, -1, 1)) / Math.PI};
+};
+
+function ringTexture() {
+  const c = Object.assign(document.createElement('canvas'), {width:128, height:128});
+  const g = c.getContext('2d');
+  g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 5;
+  g.beginPath(); g.arc(64, 64, 40, 0, 7); g.stroke();
+  g.fillStyle = 'rgba(255,255,255,.85)';
+  g.beginPath(); g.arc(64, 64, 9, 0, 7); g.fill();
+  return new THREE.CanvasTexture(c);
+}
+const ring = ringTexture();
+let marks = [];
+function buildSpots(n) {
+  for (const s of marks) { scene.remove(s); s.material.dispose(); s.userData.el.remove(); }
+  marks = NODES[n].spots.filter(h => !h.if || h.if()).map(h => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({map: ring, transparent: true, depthTest: false}));
+    s.position.copy(onWall(h.u, h.v));
+    s.scale.setScalar(h.size || (h.to ? 0.20 : 0.15));   // 单位是米：门给大一点，
+                                                          // h.size 是逐个热点的覆盖值
+    s.userData = h;
+    scene.add(s);
+    const el = document.createElement('div');
+    el.className = 'label' + (h.to ? ' go' : '');
+    el.textContent = h.label + (h.id && S.seen[h.id] ? ' ·' : '');   // 看过的加个点
+    document.body.appendChild(el);
+    h.el = el;
+    return s;
+  });
+}
+
+// 视角状态
+// fov 就是 three 的 camera.fov（垂直视野），直接给相机，不做任何折算——
+// 之前试过改成按"水平视野"记再按窗口比例折算，结果每个场景的取景都跟着变了，观感更差，
+// 已回退。所有房间的热点坐标和构图都是在垂直 75 度下量的，别再动这个默认值。
+const FOV_DEF = 75;
+const nodeFov = n => NODES[n].fov || FOV_DEF;
+let viewU = 0.5, viewV = 0.5, fov = FOV_DEF, fovTarget = FOV_DEF;
+// 站位：摄像机可以在房间中心附近走动，camPos 平滑追 camTarget
+const camPos = new THREE.Vector3();
+const camTarget = new THREE.Vector3();
+// 床底那段要的"床在震"：不是抖屏，是很慢很低的一下一下，幅度按米算（2~3 厘米）。
+// shakeTarget 由演出设值，shakeAmp 自己缓进缓出，免得开始和停下都是突变。
+// 相位从 shakeT0 起算，而 shakeT0 是喘息那段循环起播的时刻——喘息一遍 5.067 秒，
+// 震动取每遍 7 下（0.7238 秒一下，约 1.38 Hz），整数比，所以两边不会越走越错。
+const BREATH_LOOP = 5.066666;                  // audio/breath.mp3 的长度（秒）
+const SHAKE_W = 2 * Math.PI * 7 / (BREATH_LOOP * 1000);   // rad/ms
+let shakeAmp = 0, shakeTarget = 0, shakeT0 = 0;
+const keys = new Set();
+// 没有深度图的房间只保留很小的位移当"探身"：一张全景图只在它的拍摄点几何精确，
+// 离开越远误差越大；12cm 的形变看不出来，但足够让画面有活人的呼吸感。
+// 载入深度图的房间会被放宽到 DEPTH_R（见 loadDepth），那时才是真的能走。
+const WALK_R = 0.12;
+const walkR = () => NODES[node].walkR || WALK_R;
+addEventListener('keydown', e => {
+  if (photoIdx >= 0) {                            // 看照片时键盘只归照片墙
+    if (e.code === 'Escape') closePhotos(false);
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') prevPhoto();
+    if (e.code === 'ArrowRight' || e.code === 'KeyD'
+        || e.code === 'Space' || e.code === 'Enter') nextPhoto();
+    e.preventDefault();
+    return;
+  }
+  // 设置面板开着的时候键盘全归面板：Esc 逐层关掉，别让 WASD 漏到房间里去
+  if (pnEl.style.display === 'flex' || cfEl.style.display === 'flex') {
+    if (e.code === 'Escape') {
+      if (cfEl.style.display === 'flex') cfEl.style.display = 'none';
+      else pnEl.style.display = 'none';
+    }
+    return;
+  }
+  // 空格：把当前这一句字幕快进掉。举着手机或者拨号界面开着的时候，
+  // 点击另有意思（放下手机 / 选名字），键盘就是那两种情况下唯一的快进口子。
+  if (e.code === 'Space' && skipStep()) { e.preventDefault(); return; }
+  keys.add(e.code);
+  if (e.code.startsWith('Arrow')) e.preventDefault();
+  if (e.code === 'KeyC') startCalib();
+  if (e.code === 'KeyX') { calib = null; say('已取消标定', 1500); }
+  if (e.code === 'Enter') applyCalib();
+  if (e.code === 'KeyM' && master) {
+    muted = !muted;
+    ramp(master.gain, muted ? 0 : 0.85, 0.2);
+    say(muted ? '静音' : '声音已开', 1200);
+  }
+});
+addEventListener('keyup', e => keys.delete(e.code));
+const fwd = new THREE.Vector3(), right = new THREE.Vector3();
+function step() {                                  // 每帧走一小步，按住不放就是连续行走
+  if (walking || photoIdx >= 0) return;
+  let f = 0, r = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp'))    f += 1;
+  if (keys.has('KeyS') || keys.has('ArrowDown'))  f -= 1;
+  if (keys.has('KeyA') || keys.has('ArrowLeft'))  r -= 1;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) r += 1;
+  if (!f && !r) return;
+  fwd.copy(uvToVec(viewU, 0.5)).setY(0).normalize();
+  right.set(-fwd.z, 0, fwd.x);
+  camTarget.addScaledVector(fwd, f * 0.035).addScaledVector(right, r * 0.035);
+  camTarget.y = 0;
+  if (camTarget.length() > walkR()) camTarget.setLength(walkR());   // 圆形范围，各方向一致
+  if (f > 0) checkDoors(fwd);
+}
+// 看着门、按住 W 探身到头还继续推，就走进去。
+// 判定用视线方向而不是站位——位移只有 12cm，靠走的距离已经判不出来了。
+// 锥角 15° 是算过的：客厅两道门只隔 36°，再大两边就会打架。
+const DOOR_CONE = Math.cos(15 * Math.PI / 180);
+const dtmp = new THREE.Vector3();
+function checkDoors(aim) {
+  if (camTarget.length() < walkR() * 0.9) return;      // 先探到头
+  let best = null, bestDot = DOOR_CONE;
+  for (const s of marks) {
+    const h = s.userData;
+    if (!h.to) continue;
+    dtmp.copy(uvToVec(h.u, 0.5)).setY(0).normalize();
+    const dot = dtmp.dot(aim);
+    if (dot > bestDot) { bestDot = dot; best = h; }
+  }
+  if (best) enterNode(best.to, best);
+}
+let dragging = false, px = 0, py = 0;
+
+// 鼠标锁定（Pointer Lock）：FPS 标准环视，不用按住，鼠标可以无限转
+let locked = false;
+const SENS = 0.12;          // 度/像素，锁定状态下的灵敏度
+const INVERT_Y = false;
+const wrap1 = x => ((x % 1) + 1) % 1;
+enterEl.addEventListener('click', () => { initAudio(); AC?.resume(); app.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => {
+  locked = document.pointerLockElement === app;
+  if (locked && !enterEl.classList.contains('back')) {
+    enterEl.classList.add('back');                   // 从这以后的遮罩只是提示，不再挡面板
+    enterEl.innerHTML = '点击画面回到第一视角'
+      + '<span>左上角的面板和按钮现在可以直接点 · 也可以点手机</span>';
+  }
+  if (endEl.style.display !== 'flex') enterEl.style.display = (locked || callOn) ? 'none' : 'flex';
+  if (!locked) keys.clear();          // 松开锁定就停下，别让人一直往前飘
+});
+addEventListener('mousemove', e => {
+  if (!locked || photoIdx >= 0) return;           // 看照片时视角冻住，不然一边翻一边转很晕
+  // 灵敏度跟 FOV 挂钩：缩到长焦时同样的鼠标位移应该转得更少
+  const k = SENS * Math.tan(fov * Math.PI / 360) / Math.tan(FOV_DEF * Math.PI / 360);
+  viewU = wrap1(viewU - e.movementX * k / 360);            // yaw 无限累加取模
+  viewV = THREE.MathUtils.clamp(                            // pitch 硬夹紧，不许翻过头顶
+    viewV + (INVERT_Y ? -1 : 1) * e.movementY * k / 180, 0.02, 0.98);
+});
+
+// 未锁定时（移动端、按 Esc 之后）保留拖拽环视
+app.addEventListener('pointerdown', e => {
+  if (locked) return;
+  dragging = true; px = e.clientX; py = e.clientY; app.classList.add('dragging');
+});
+addEventListener('pointerup', () => { dragging = false; app.classList.remove('dragging'); });
+addEventListener('pointermove', e => {
+  if (!dragging || locked) return;
+  const k = fov / FOV_DEF * 0.0009;
+  viewU = wrap1(viewU - (e.clientX - px) * k);
+  viewV = THREE.MathUtils.clamp(viewV - (e.clientY - py) * k * 2, 0.02, 0.98);
+  px = e.clientX; py = e.clientY;
+});
+app.addEventListener('wheel', e => {
+  e.preventDefault();
+  // 上限只留到 92：垂直再往外就是鱼眼（之前误滚到 100 就是"房间又大又歪"那次），
+  // 而且滚轮很容易误触，滚出去了玩家不知道怎么滚回来
+  fovTarget = THREE.MathUtils.clamp(fovTarget + Math.sign(e.deltaY) * 5, 45, 92);
+}, {passive: false});
+
+// 走进另一个房间：全程第一视角连续前进，不黑场。
+// 新房间的盒子被摆在你前方 L 米处，并绕 Y 轴旋转，使它"通回来的那道门"正好在你背后；
+// 你一边往前走，旧房间淡出、新房间淡入（Street View 那种溶解），走完刚好站在新房间中心。
+const WALK_L = 2.2;        // 穿过一道门的距离（米）
+const WALK_MS = 1200;
+let walking = false, walkT0 = 0, walkMs = WALK_MS, walkRy = 0, walkTo = '', stepAt = 0;
+const walkFrom = new THREE.Vector3(), walkDest = new THREE.Vector3();
+function enterNode(name, spot) {
+  if (walking || !NODES[name] || spot.arrive === undefined) return;
+  setPhone(false);                                          // 走动时先把手放下
+  walking = true; walkTo = name;
+  const dir = uvToVec(spot.u, 0.5).setY(0).normalize();      // 水平朝那道门
+  // 让新房间的回程门落在你前进方向的正后方
+  walkRy = (spot.u + 0.5 - spot.arrive) * Math.PI * 2;
+  B = makeRoom(name);
+  B.mesh.rotation.y = walkRy;
+  B.mesh.position.copy(dir).multiplyScalar(WALK_L);
+  B.mat.transparent = true;
+  B.mat.opacity = 0;
+  B.mesh.renderOrder = 1;
+  scene.add(B.mesh);
+  for (const s of marks) s.userData.el.style.display = 'none';
+  // 从当前站位继续往前，不要把人拽回房间中心重新走一遍
+  walkFrom.copy(camPos);
+  walkDest.copy(dir).multiplyScalar(WALK_L);
+  walkMs = WALK_MS * THREE.MathUtils.clamp(walkFrom.distanceTo(walkDest) / WALK_L, 0.45, 1);
+  fovTarget = 84;                                           // 走动时视野略开，像人往前探身
+  walkT0 = performance.now();
+  say(spot.text, 3600);
+  blip('whoosh');
+  stepAt = walkT0 + 120;                                    // 过门时踩三四步
+}
+// 硬切到另一个场景（不是走过去的那种过门）。视频放完落到"他家门外"就走这条。
+function jumpTo(name, u = 0.5) {
+  const old = A;
+  A = makeRoom(name);
+  A.mat.transparent = false; A.mat.opacity = 1; A.mesh.renderOrder = 0;
+  scene.add(A.mesh);
+  scene.remove(old.mesh); old.mat.dispose();
+  if (B) { scene.remove(B.mesh); B.mat.dispose(); B = null; }
+  node = name;
+  walking = false;                                          // exitDoor 里借来屏蔽点击的，这里还回去
+  camPos.set(0, 0, 0); camTarget.set(0, 0, 0);
+  viewU = u; viewV = 0.5;
+  fov = fovTarget = nodeFov(node);
+  buildSpots(node);
+  applyGuide();
+  applyAudioProfile();
+  save();
+}
+function finishWalk() {
+  scene.remove(A.mesh);
+  A.mat.dispose();
+  A = B; B = null;
+  A.mat.transparent = false; A.mat.opacity = 1; A.mesh.renderOrder = 0;
+  // 把新房间的旋转折算进视角，之后热点坐标就回到该房间自己的坐标系
+  viewU = (viewU - walkRy / (Math.PI * 2) + 2) % 1;
+  A.mesh.rotation.y = 0;
+  A.mesh.position.set(0, 0, 0);
+  camPos.set(0, 0, 0); camTarget.set(0, 0, 0);
+  node = walkTo;
+  buildSpots(node);
+  applyGuide();
+  applyAudioProfile();
+  stepAt = 0;
+  fovTarget = nodeFov(node);
+  walking = false;
+  NODES[node].onArrive?.();
+  save();
+}
+
+// 点击热点
+const ray = new THREE.Raycaster();
+// 字幕。who 给了就在上面标一行说话人（'你' / 'Claire' / 'Jude'）；
+// 不给就是叙述句，跟以前一样只有正文。
+// 用 innerHTML 是为了那一行说话人，所以正文得转义——台词里现在没有尖括号，
+// 但以后随手写一句带 < 的就会把字幕吃掉，先挡住。
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const say = (txt, ms = 4200, who = '') => {
+  if (!txt) return;
+  storyEl.innerHTML = (who ? '<b class="who">' + esc(who) + '</b>' : '') + esc(txt);
+  storyEl.classList.add('on');
+  clearTimeout(storyEl._t);
+  storyEl._t = setTimeout(() => storyEl.classList.remove('on'), ms);
+};
+const ndc = new THREE.Vector2();
+
+// —— 房间形状标定 ——
+// 按 C 进入，把准星对准"墙和地面的交线"（墙脚），沿着房间点一圈，回车生效。
+// 原理：已知视高 1.6m，墙脚的俯角就唯一决定了那面墙有多远，d = 1.6 / tan(俯角)。
+// 这样量出来的是真实平面图，墙角扎在对的位置，走动才不会弯。
+let calib = null;
+function startCalib() {
+  calib = [];
+  say('标定模式：准星对准墙脚（墙与地板的交线）沿房间点一圈（至少 3 点），回车生效，X 取消', 8000);
+}
+function calibClick() {
+  if (viewV <= 0.53) { say('要对准脚下方向的墙脚，不是墙上', 2000); return; }
+  const d = ROOM.down / Math.tan((viewV - 0.5) * Math.PI);
+  calib.push({u: +viewU.toFixed(3), d: +d.toFixed(2)});
+  say(`第 ${calib.length} 点：u=${viewU.toFixed(3)} 距离 ${d.toFixed(2)}m`, 2000);
+}
+function applyCalib() {
+  if (!calib || calib.length < 3) return;
+  const plan = calib.slice().sort((a, b) => a.u - b.u);
+  NODES[node].plan = plan;
+  const line = 'plan: ' + JSON.stringify(plan).replace(/"/g, '') + ',';
+  navigator.clipboard?.writeText(line);
+  console.log(node, line);
+  delete geoCache[node];
+  const old = A.mesh.geometry;
+  A.mesh.geometry = geoFor(node);
+  old.dispose();
+  buildSpots(node);
+  calib = null;
+  say('已生效并复制到剪贴板：' + line, 6000);
+}
+
+// ——— 开场引导：电视 -> 照片墙 -> 手里的手机 ———
+// 三步走完就不再出现。箭头每帧跟着目标：目标在视野里就贴着它抖，
+// 不在视野里就钉到屏幕左右边缘，提示往哪边转——不然玩家会在原地找不到东西。
+const GUIDE = [
+  {id: 'tv',    tip: '点击电视'},
+  {id: 'wall',  tip: '点击照片墙'},
+  {id: 'phone', tip: '点击你手里的手机'},
+];
+let gStep = 0;
+// 读档：视角方向和引导进度要等 GUIDE / viewU 声明完才能落地。
+// 白天那一段的引导是 toDay() 现改的，读档时它不会再跑一遍，所以这里照抄一份。
+if (SAVED && SAVED.v === 1) {
+  if (S.day) {
+    GUIDE.length = 0;
+    GUIDE.push({id: 'toCorridor', tip: '去走廊', what: '走廊那个门口'}, {id: 'door', tip: '点击防盗门'});
+  }
+  if (typeof SAVED.gStep === 'number') gStep = Math.min(SAVED.gStep, GUIDE.length);
+  if (Array.isArray(SAVED.view)) { viewU = SAVED.view[0]; viewV = SAVED.view[1]; }
+  applyGuide();          // 最后那几个场景的引导跟"人在哪"绑定，不跟存档里那个步数走
+}
+function guideDone(id) {
+  if (gStep < GUIDE.length && GUIDE[gStep].id === id) gStep++;
+}
+// 出了防盗门之后的这几个场景，每个只有一件该做的事，引导就跟着节点走
+// （她自己那套房子里返回 null：那边的引导由开场三步和 toDay() 管）。
+// tip 是目标在视野里时显示的那句（祈使句）；what 是目标不在视野里时"往…看，找 X"里的
+// 那个 X。tip 形如"点击某物"的可以省掉 what，掐掉"点击"两个字正好就是名词。
+function guideFor(n) {
+  // 第二章 · 隔壁：她自己租的那一户，路线是 楼下 → 楼上 → 那面墙 → 凹坑 → 洞
+  if (n === 'ndliving') return has('ndBedIn') ? [] : [{id: 'ndup', tip: '上楼', what: '楼梯'}];
+  if (n === 'ndbed') {
+    if (!has('sawDent')) return [{id: 'ndwall', tip: '点击那面墙', what: '那面空墙'}];
+    if (!has('holeOpen')) return [{id: 'nddent', tip: '拿电钻钻开它', what: '墙脚那个凹坑'}];
+    if (!has('peeped2')) return [{id: 'ndhole', tip: '凑上去看', what: '墙上那个洞'}];
+    return [];
+  }
+  // 第二章后半：周二又回到他家。这一段要压在 outOfBed 那一支前面，
+  // 不然 hisbed 会被指去"下楼"（那是第一章那条支线的收尾）。
+  if (has('ch2Back')) {
+    if (n === 'hishouse') return [{id: 'hisstairs', tip: '上楼', what: '楼梯'}];
+    if (n === 'hisbed') return has('ch2Under')
+      ? []
+      : [{id: 'underbed2', tip: '钻到床底下', what: '床底那道缝'}];
+    if (n === 'underbed') return [];
+  }
+  // "手机没掏出来"那条支线：从床底爬出来之后，路线是 卧室 → 楼下 → 出门 → 邻居家的窗户
+  if (has('outOfBed')) {
+    if (n === 'hisbed') return [{id: 'hisdown', tip: '下楼', what: '楼梯口'}];
+    if (n === 'hishouse') return [{id: 'hisout', tip: '走出去', what: '大门'}];
+    if (n === 'outside') return has('sawToLet')
+      ? []
+      : [{id: 'tolet', tip: '看邻居家的窗户', what: '邻居家的窗户'}];
+  }
+  if (n === 'outside') return has('heLeft')
+    ? [{id: 'hisdoor2', tip: '点击那扇门'}]
+    : [{id: 'hedge', tip: '躲进灌木丛', what: '脚边的灌木丛'}];
+  if (n === 'hishouse') return [{id: 'hisstairs', tip: '上楼', what: '楼梯'}];
+  if (n === 'hisbed') {
+    if (has('hidUnder')) return [];                  // 已经在床底下了，别再指床
+    if (has('coupleHome')) return [{id: 'underbed', tip: '钻到床底下', what: '床底那道缝'}];
+    return has('foundHair') ? [] : [{id: 'hairbed', tip: '点击那张床'}];
+  }
+  // 床底下：Claire 走了之后才有下一步——爬出去
+  if (n === 'underbed') return has('claireLeft') && !has('outOfBed')
+    ? [{id: 'crawlout', tip: '爬出去', what: '床架和地板之间那道缝'}]
+    : [];
+  return null;
+}
+function applyGuide() {
+  const g = guideFor(node);
+  if (!g) return;
+  GUIDE.length = 0;
+  GUIDE.push(...g);
+  gStep = 0;
+}
+const phoneEl = document.getElementById('phone');
+const phoneVid = phoneEl.querySelector('.vid');
+const guideEl = document.getElementById('guide');
+let phoneUp = false;
+// 手机不是一直攥在手里的。它只在"这段剧情用得上"的时候才出现在画面右下角：
+//   1. 只在她自己那套房子里（出了防盗门就不该再举着它演戏）
+//   2. 看过照片墙之后才出现——引导的第三步才是"点击你手里的手机"，
+//      在那之前它出现在画面里只会抢走玩家的注意力
+//   3. 到了周六白天，看录像和打电话这两件事都做完了，收起来
+// 用途只剩那两件：放那段十五秒的录像、打那通电话。
+const IN_FLAT = {living: 1, bedroom: 1, corridor: 1};
+const phoneAvail = () => !S.day && has('sawWall') && !!IN_FLAT[node];
+let phoneShown = null;
+function syncPhone() {
+  const on = phoneUp || phoneAvail();      // 已经举起来了就别中途抽走
+  if (on === phoneShown) return;           // 每帧都写 DOM 没必要，只在翻转时写
+  phoneShown = on;
+  phoneEl.style.visibility = on ? 'visible' : 'hidden';
+}
+syncPhone();                               // 别等第一帧，否则开局会闪一下那只手
+// 手机的声音走 Web Audio：高通 190 / 低通 6.2k，做成一只手机小喇叭的音色，
+// 并且挂在 master 上，M 静音一样管得住它。
+let phoneChain = null;
+function phoneAudio(on) {
+  if (!AC) return;
+  if (!phoneChain) {
+    const src = AC.createMediaElementSource(phoneVid);
+    const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 190;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6200;
+    const g = AC.createGain(); g.gain.value = 0;
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master);
+    phoneChain = g;
+  }
+  ramp(phoneChain.gain, on ? 0.95 : 0, on ? 0.4 : 0.25);
+}
+// ——— 举起之后的第二段动作：把屏幕推到画面正中放大 ———
+// 这些数字必须跟上面的 CSS 对齐：transform-origin 30.5%/100%、右下角 -4vw/-8vh、
+// 宽 min(430px,45vw)、机身 840x1259、屏幕 left10.1 top1.9 w39.8 h55.7。
+// 缩放是绕 origin 做的，而屏幕中心不在 origin 上，所以位移要反解出来，否则会飞出画面。
+const PH_BD = document.getElementById('phone-bd');
+const PH_O = [0.305, 1.0], PH_SCR = {l: .101, t: .019, w: .398, h: .557}, PH_TILT = -1.47;
+let zoomOn = false, zoomT = null;
+function zoomTransform() {
+  const W = innerWidth, H = innerHeight;
+  const bw = Math.min(430, W * 0.45), bh = bw * 1259 / 840;
+  const left = W * 1.04 - bw, top = H * 1.08 - bh;
+  const ox = left + PH_O[0] * bw, oy = top + PH_O[1] * bh;
+  const cx = left + (PH_SCR.l + PH_SCR.w / 2) * bw, cy = top + (PH_SCR.t + PH_SCR.h / 2) * bh;
+  // 屏幕又高又窄（比例约 0.48），所以基本是按高度撑满，宽度那条只是防止极端窗口下溢出
+  const k = Math.min(H * 0.86 / (PH_SCR.h * bh), W * 0.46 / (PH_SCR.w * bw));
+  const a = PH_TILT * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const dx = cx - ox, dy = cy - oy;
+  return {k,
+    tx: W / 2 - ox - k * (ca * dx - sa * dy),
+    ty: H / 2 - oy - k * (sa * dx + ca * dy)};
+}
+function applyZoom() {
+  const z = zoomTransform();
+  phoneEl.style.transform = `translate(${z.tx.toFixed(1)}px,${z.ty.toFixed(1)}px) `
+    + `rotate(${PH_TILT}deg) scale(${z.k.toFixed(3)})`;
+}
+function phoneZoom(on) {
+  clearTimeout(zoomT);
+  if (on === zoomOn) return;
+  zoomOn = on;
+  PH_BD.classList.toggle('on', on);
+  phoneEl.classList.toggle('zoom', on);
+  if (on) applyZoom();
+  else phoneEl.style.transform = '';   // 交回给 CSS 的 .up / 默认状态，自己动回去
+}
+addEventListener('resize', () => { if (zoomOn) { applyZoom(); if (callOn) layoutCall(); } });
+// ——— 录像放完之后的两个选择：打给 Jude，还是打给 Sarah ———
+// 界面盖在放大的屏幕上，尺寸按 zoomTransform 的缩放结果算，正好是那块屏幕。
+// 这时候要主动退出鼠标锁定——锁定状态下 DOM 收不到 click，两个选项就点不动。
+const callEl = document.getElementById('call');
+const callImg = callEl.querySelector('.ui');
+let callOn = false;
+// 打给 Jude 的那通电话不许中途退出：红键按不下去，手机也放不下来。
+// 理由是剧情——那三句（"别打给我了" / "周六方便见一面吗" / "行。"）是整条周六线的
+// 唯一入口，挂断就没有周六，玩家也就走不到后面。打给 Sarah 的那通不锁，
+// 那通只是补背景，随时挂掉都不影响。
+let holdCall = false;
+function layoutCall() {
+  const W = innerWidth, H = innerHeight;
+  const bw = Math.min(430, W * 0.45), bh = bw * 1259 / 840;
+  const z = zoomTransform();
+  const w = PH_SCR.w * bw * z.k, h = PH_SCR.h * bh * z.k;
+  callEl.style.width = w.toFixed(1) + 'px';
+  callEl.style.height = h.toFixed(1) + 'px';
+  callEl.style.left = (W / 2 - w / 2).toFixed(1) + 'px';
+  callEl.style.top = (H / 2 - h / 2).toFixed(1) + 'px';
+}
+function showCall() {
+  callOn = true;
+  callEl.classList.remove('calling');
+  callImg.src = 'images/phone-ui-contacts.jpg';
+  layoutCall();
+  callEl.style.display = 'block';
+  enterEl.style.display = 'none';       // 别让"点击回到第一视角"那层抢走这两下点击
+  document.exitPointerLock?.();         // 锁定状态下 DOM 收不到 click，选项就点不动
+  makeVoxChains();
+  for (const n of ['jude-1', 'her-1', 'jude-2']) voxLoad(n);   // 先解码，别等到该说话了才去拉
+  blip('note');
+  say('录像放完了。你的通讯录里只剩两个人。', 5000);
+}
+function hideCall() {
+  callOn = false;
+  holdCall = false;                            // 这通打完了，锁跟着解
+  callEl.style.display = 'none';
+  callEl.classList.remove('calling', 'locked');
+  // 通话过程中鼠标是解锁的，收工之后把"点击回到第一视角"那层放回来
+  if (!locked && endEl.style.display !== 'flex') enterEl.style.display = 'flex';
+}
+// 剧情里的二选一。返回选中的下标，用 await 直接接在剧情流程里。
+// 和手机上那两个选项不一样：这个不依赖手机界面，任何场景都能用。
+// 必须主动退出鼠标锁定——锁定状态下 DOM 收不到 click，按钮点不动；
+// 同时把"点击回到第一视角"那层收起来，不然它会吃掉这两下点击。
+const pickEl = document.getElementById('pick');
+function askChoice(...labels) {
+  return new Promise(resolve => {
+    pickEl.innerHTML = '';
+    labels.forEach((txt, i) => {
+      const b = document.createElement('button');
+      b.textContent = txt;
+      b.onclick = ev => {
+        ev.stopPropagation();
+        pickEl.classList.remove('on');
+        pickEl.innerHTML = '';
+        if (!locked && endEl.style.display !== 'flex') enterEl.style.display = 'flex';
+        blip('click');
+        resolve(i);
+      };
+      pickEl.appendChild(b);
+    });
+    pickEl.classList.add('on');
+    enterEl.style.display = 'none';
+    document.exitPointerLock?.();
+  });
+}
+// 一段通话按顺序走：有配音的那句等配音放完，没配音的按 d 秒等。
+// sceneId 一变（放下手机、按红键挂断）整段就作废，不会串到下一次。
+let sceneId = 0;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// 字幕可以点击（或按空格）加速：每一句底下挂一个"跳过"的口子，点了立刻走下一句，
+// 不点就按原来的秒数自然流下去。
+// 每句开头留 320 毫秒的保护期——不然"点击热点"、"点选项"那一下会顺手把第一句也吃掉，
+// 连点两下也不会一次跳掉两句。
+let stepSkip = null;
+function skipStep() {
+  if (!stepSkip) return false;
+  const fin = stepSkip; stepSkip = null; fin('skip'); return true;
+}
+function waitStep(ms) {
+  return new Promise(resolve => {
+    let done = false;
+    const fin = how => {
+      if (done) return;
+      done = true;
+      if (stepSkip === fin) stepSkip = null;
+      clearTimeout(t1); clearTimeout(t2);
+      resolve(how);
+    };
+    const t1 = setTimeout(() => fin('time'), ms);
+    const t2 = setTimeout(() => { if (!done) stepSkip = fin; }, Math.min(320, ms));
+  });
+}
+async function callScene(steps) {
+  const my = ++sceneId;
+  for (const st of steps) {
+    if (my !== sceneId) return;
+    const d = st.a ? await vox(st.a) : 0;
+    if (my !== sceneId) return;
+    const wait = Math.max(st.d || 0, d ? d + 0.6 : 0, 1.2);
+    if (st.t) say(st.t, Math.max(2200, wait * 1000), st.who);
+    st.f?.();
+    // 跳过一句有配音的（尖叫、Jude 那几句），声音得跟着收掉，
+    // 不然它会压到下一句字幕上去。0.18 秒淡出，不是硬切，听不出咔哒。
+    if (await waitStep(wait * 1000) === 'skip' && st.a) stopVox(0.18);
+  }
+  if (my !== sceneId) return;
+  setPhone(false);
+  afterBeat();
+}
+function doCall(who) {
+  // 不收界面，换成"通话中"那张：Jude 用图 2，Sarah 用图 3
+  callEl.classList.add('calling');
+  callEl.classList.toggle('locked', who === 'jude');   // 光标变成"点不动"
+  holdCall = who === 'jude';
+  callImg.src = who === 'jude' ? 'images/phone-ui-jude.jpg' : 'images/phone-ui-sarah.jpg';
+  if (who === 'jude') {
+    callScene([
+      {d: 3.2, t: '拨出去了。响一声，两声——', f: () => blip('ring')},
+      {d: 4.0, t: '被掐断了。他挂得比铃声还快。', f: () => blip('hangup')},
+      {d: 6.2, t: '你往上翻通话记录：Jude，未接通。再往上，还是 Jude，未接通。'
+                + '你数到第四十七条就不数了。',
+        f: () => { S.dread += 3; mark('calledJude'); }},
+      {d: 3.4, t: '你又拨了一遍。这次通了。', f: () => blip('ring')},
+      // 这三句是英文配音（audio/jude-1、her-1、jude-2），字幕是中文
+      {a: 'jude-1', d: 3.6, who: 'Jude', t: '「别打给我了。再打我就拉黑你。」'},
+      {a: 'her-1', d: 5.4, who: '你', t: '「我的一些东西还在你那里，周六方便见一面拿给我吗。」'},
+      {d: 2.2, t: '听筒里没有声音。两秒。'},
+      {a: 'jude-2', d: 2.0, who: 'Jude', t: '「行。」', f: () => mark('saturday')},
+      {d: 4.6, t: '他先挂的。你把手机从耳边拿下来，屏幕上还亮着他的名字。周六。'},
+      {d: 1.0, f: toDay},
+    ]);
+  } else {
+    callScene([
+      {d: 4.4, t: '响到第四声，她接了。', f: () => blip('ring')},
+      {who: 'Sarah', d: 3.6, t: '「喂？这么晚——你还没睡？」'},
+      {d: 3.8, t: '你说你在他家里。Sarah 那边安静了一下。'},
+      {who: 'Sarah', d: 3.6, t: '「他不是三个月前就搬走了吗。」'},
+      {d: 2.8, t: '她的声音压低了。'},
+      {who: 'Sarah', d: 4.6, t: '「那你现在……在谁家里？」',
+        f: () => { S.dread += 2; mark('calledSarah'); }},
+    ]);
+  }
+}
+callEl.addEventListener('click', e => {
+  e.stopPropagation();
+  if (callEl.classList.contains('calling')) {   // 通话中：只有那个红键管事，提前挂断
+    if (e.target.closest('.hangup')) {
+      // 打给他的那通挂不掉。不做成"点了没反应"——那看着像 bug，
+      // 给一句字幕说明是人物不肯挂，不是按钮坏了。
+      if (holdCall) { blip('note'); say('你的拇指压在红键上。没有按下去。', 3000); return; }
+      blip('hangup'); setPhone(false); afterBeat();
+    }
+    return;
+  }
+  const hot = e.target.closest('.hot');
+  if (hot) doCall(hot.dataset.who);
+});
+// 录像放完就自动把手机放下，不循环——"放完这段"就是这一遍
+
+phoneVid.addEventListener('ended', () => {
+  if (!phoneUp) return;
+  if (zoomOn) showCall();              // 放完不收手机，改成给你两个号码
+  else setPhone(false);
+});
+function setPhone(up) {
+  if (up === phoneUp) return;
+  phoneUp = up;
+  phoneEl.classList.toggle('up', up);
+  phoneEl.classList.toggle('dim', !up);
+  // 垂下去就暂停，别让一段循环视频在看不见的地方一直解码
+  if (up) {
+    phoneVid.loop = false;             // 举起来这一次只放一遍
+    phoneVid.currentTime = 0;
+    phoneVid.play().catch(() => {});
+    // 先让手抬到位（CSS 那段 .55s），再往前推近，两段动作不要叠在一起
+    zoomT = setTimeout(() => { if (phoneUp) phoneZoom(true); }, 620);
+  } else {
+    hideCall();
+    sceneId++;                        // 手动放下就把没说完的台词整段作废
+    phoneZoom(false);
+    phoneVid.pause();
+  }
+  phoneAudio(up);
+  if (up) tvAudio(false);            // 手机里的录像一响，电视就闭嘴
+  duck = up ? 0.3 : 1;               // 雨声和嗡鸣退到背景里
+  applyAudioProfile();
+}
+function togglePhone() {
+  if (callOn) return;                // 拨号界面开着的时候，只能从两个名字里选一个
+  if (!phoneUp && !phoneAvail()) return;   // 这个场景没有手机可举
+  initAudio(); AC?.resume();         // 举手机这一下本身就是用户手势，够资格出声
+  setPhone(!phoneUp);
+  if (!phoneUp) return;
+  guideDone('phone');
+  if (!S.seen.phone) { S.seen.phone = true; S.dread += 2; mark('sawPhone'); }
+  say('你自己的手机。屏幕上是他走进那扇门的背影，十五秒。你没有关掉过它。', 6500);
+  blip('note');
+  afterBeat();
+}
+// 没锁定鼠标的时候（比如按了 Esc）手机能直接点；锁定之后由 app 的 click 接管
+phoneEl.addEventListener('click', e => { e.stopPropagation(); initAudio(); AC?.resume(); togglePhone(); });
+addEventListener('keydown', e => {
+  if (e.code === 'KeyF' && photoIdx < 0 && !walking) togglePhone();
+});
+
+app.addEventListener('click', e => {
+  if (photoIdx >= 0) {                            // 照片墙自己接点击了，这里只是兜底
+    nextPhoto();
+    return;
+  }
+  // 先算这一下有没有点在热点上（锁定时用屏幕中心的准星拾取，这就是 FPS 的交互方式）。
+  // 顺序很重要：**热点优先于"快进字幕"**。
+  // 之前是反的——只要有字幕在走，任何点击都先被当成快进吃掉。上一段演出的字幕
+  // 还剩十几秒时走到下一个房间，头两三下点热点就全被吞了，看着就是"点了没反应"。
+  let hit = null;
+  if (!walking && !calib && !phoneUp && !callOn) {
+    if (locked) ndc.set(0, 0);
+    else ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    hit = ray.intersectObjects(marks)[0] || null;
+  }
+  // 没点到东西才算"快进到下一句"。举着手机 / 拨号界面那会儿点击另有含义
+  //（放下手机、选名字），那两种情况用空格快进。
+  if (!hit && !phoneUp && !callOn && skipStep()) return;
+  if (walking) return;
+  // 拨号界面开着：这时候只认那两个名字，点空白处不算数
+  if (callOn) return;
+  // 手机举着的时候画面被那段录像占满了，随便点一下就是放下手机、回到房间
+  if (phoneUp) { setPhone(false); return; }
+  if (calib) { calibClick(); return; }
+  // 引导正指向手机时，准星没对上任何东西的那一下就算点手机。
+  // 锁定鼠标之后 DOM 元素收不到 click（事件全给锁定目标），只能这样接。
+  if (!hit) {
+    if (!S.day && gStep === 2 && !phoneUp) togglePhone();
+    return;
+  }
+  const h = hit.object.userData;
+  if (h.action === 'lamp') {
+    const n = NODES[node];
+    n.off = 1 - n.off;                                  // 灯的状态记在节点上，各房间独立
+    h.el.textContent = h.label = n.off ? '开灯' : '关灯';
+    if (n.off) { S.dread += 1; mark('turnedOff_' + node); }
+    blip('click');
+    applyAudioProfile();
+    say(n.off ? '啪。黑暗里雨声忽然变大了。' : '灯又亮起来。', 3000);
+    afterBeat();
+  } else if (h.action === 'tv') {
+    const n = NODES[node];
+    n.tvState = n.tvState === 1 ? 2 : 1;          // 雪花/关机 -> 播放 -> 关机 -> 播放
+    const playing = n.tvState === 1;
+    h.el.textContent = h.label = playing ? '关电视' : '开电视';
+    tvAudio(playing);
+    blip('click');
+    if (playing) {
+      if (n.off) {                               // 关着灯的时候开电视，那个"人形"才成立
+        mark('tvFigure');
+        say('雪花突然收束成一个女人。她在唱歌，声音是从这台机器里出来的，口型和声音差半拍。', 5000);
+      } else {
+        say('磁带自己接上了。一个女人在唱歌，你没有按任何键。', 4500);
+      }
+    } else {
+      say('你按掉了电源。屏幕暗下去的那一瞬，她还在往镜头这边凑。', 4500);
+    }
+    if (h.id && !S.seen[h.id]) { S.seen[h.id] = true; S.dread += h.dread || 0; }
+    guideDone('tv');
+    afterBeat();
+  } else if (h.action === 'photos') {
+    mark('sawWall');
+    if (h.id && !S.seen[h.id]) { S.seen[h.id] = true; S.dread += h.dread || 0; }
+    guideDone('wall');
+    showPhoto(0);
+  } else if (h.to) {
+    // 热点可以顺手换掉目标房间的贴图（走出他家那一下要把门外换成夜里那张）：
+    // enterNode 里的 makeRoom 读的就是 NODES[to].pano，所以必须在它之前改完。
+    if (h.pano) NODES[h.to].pano = h.pano;
+    guideDone(h.id);
+    enterNode(h.to, h);
+  } else if (h.action === 'hair') {
+    // 从床上捡起几根不属于她的头发。这一段没有配音，只有字幕，用 callScene 排时序。
+    if (has('foundHair')) { say('那几根头发还绕在你手指上。', 3000); return; }
+    mark('foundHair');
+    S.dread += 3;
+    S.seen[h.id] = true;
+    applyGuide();                                 // 这一步做完了，箭头收掉
+    blip('note');
+    callScene([
+      {t: '你伸手摸了一下那张你睡过无数次的床。', d: 4.6},
+      {t: '枕头上有几根长头发。你把它们捏起来，举到百叶窗那道光里看。', d: 6.0,
+       f: () => showPlate(PLATE_HAIR)},
+      {t: '金棕色，很长，明显不是他的。你把它们绕在食指上绕了三圈，塞进了外套口袋。', d: 7.0},
+      {d: 1.6, f: hidePlate},
+      // 头发收进口袋，楼下的门就响了。couple-home 是实录音（他和一个女人），
+      // 名字不以 jude 开头，所以走的是"房间里"那条链路而不是听筒链路。
+      {t: '楼下，钥匙插进了锁孔。', d: 3.4, f: () => blip('note')},
+      {a: 'couple-home', d: 5.2, t: '门开了。是 Jude 的声音——还有一个女人在笑。'},
+      {t: '他们在门厅脱鞋。然后你听见了第一级台阶。', d: 5.4,
+       f: () => {
+         S.dread += 4;
+         mark('coupleHome');
+         applyGuide();                              // 箭头从"那张床"换成"床底"
+         buildSpots(node);                          // 床底那个热点这一刻才满足 if
+         blip('step');
+       }},
+    ]);
+  } else if (h.action === 'frame') {
+    // 架子上的相框。点一下就是一整段：拿起来 → 合照淡入 → 摆回去。
+    // 不做"只能看一次"——放完再点就再走一遍（callScene 会把上一段作废，
+    // 所以中途再点也是重新开始，不会两段字幕打架）。
+    // 只有不安值是一次性的：热点的 dread 走 S.seen 那道闸，最后那句的 +2 也只给第一次，
+    // 不然反复点就能把 dread 刷上去。
+    const first = !has('sawCouple');
+    mark('sawCouple');
+    if (h.id && !S.seen[h.id]) { S.seen[h.id] = true; S.dread += h.dread || 0; }
+    blip('note');
+    callScene([
+      // 前三句合成一句：点一下就一次给完，合照跟着这一句一起淡入。
+      // 48 个字，按前后那几句的语速（大约 0.23 秒一个字）给 10.5 秒。
+      {t: '相框里没有一张是你。最靠外那个你认得——以前里面是你们两个。你把它拿起来了。',
+       d: 10.5, f: () => showPlate(PLATE_FRAME)},
+      {t: '他笑得很开，牙齿全露出来。你见过这个笑——只是那时候镜头这边是你。', d: 7.6},
+      {t: '你伸手把它摆正了一点，让它更朝着门口。他喜欢摆成那样。', d: 7.0,
+       f: () => { if (first) S.dread += 2; }},
+      {d: 1.6, f: hidePlate},
+    ]);
+  } else if (h.action === 'crawlout') {
+    crawlOutBeat();
+  } else if (h.action === 'tolet') {
+    toLetBeat(h);
+  } else if (h.action === 'hideunder') {
+    duckUnderBed();
+  } else if (h.action === 'dent') {
+    dentBeat(h);
+  } else if (h.action === 'drill') {
+    drillBeat(h);
+  } else if (h.action === 'peep') {
+    peepBeat(h);
+  } else if (h.action === 'ch2hide') {
+    ch2Duck();
+  } else if (h.action === 'hide' && !has('heLeft')) {
+    // 玩家自己躲进灌木深处，就是这段演出的开场——比干等那个 15 秒的兜底计时器好
+    hedgeBeat();
+  } else if (h.id === 'door' && S.day) {
+    guideDone('door');
+    say(typeof h.text === 'function' ? h.text() : h.text, 3000);
+    setTimeout(exitDoor, 1400);                       // 先让那句台词说完，再开门
+  } else {
+    say(typeof h.text === 'function' ? h.text() : h.text);
+    if (h.id && !S.seen[h.id]) {                        // 不安值只在第一次发现时累加
+      S.seen[h.id] = true;
+      S.dread += h.dread || 0;
+    }
+    h.on?.();
+    blip('note');
+    afterBeat();
+  }
+});
+// ——— 周六早上 ———
+// 打完那通电话之后天亮：房间提亮（着色器里的 uDay，约 4 秒渐变）、雨停、
+// 所有房间的灯归位（白天开关灯没有意义），引导重新指向那道防盗门。
+function toDay() {
+  if (S.day) return;
+  S.day = true;
+  for (const k in NODES) NODES[k].off = 0;
+  applyAudioProfile();
+  ramp(rainGain?.gain, 0, 6);                 // 雨慢慢停，别一刀切
+  // 引导换成两步：先走到走廊，再点那道门
+  GUIDE.length = 0;
+  GUIDE.push({id: 'toCorridor', tip: '去走廊', what: '走廊那个门口'}, {id: 'door', tip: '点击防盗门'});
+  gStep = node === 'corridor' ? 1 : 0;
+  buildSpots(node);
+  blip('note');
+  say('……不知道什么时候睡着的。窗帘缝里是白的，雨停了。今天是周六。', 6000);
+  save();
+}
+// 穿过防盗门：往门的方向推一下镜头、整屏泛白，然后接那段视频
+const outVid = document.getElementById('outvid');
+const flashEl = document.getElementById('flash');
+let leaving = false;
+function exitDoor() {
+  if (leaving) return;
+  leaving = true;
+  walking = true;                              // 借走动状态屏蔽点击、热点和引导
+  fovTarget = 90;                              // 视野往前扑，像人贴到门上
+  blip('whoosh');
+  say('五道锁，一道一道开。门轴响了一声。', 3200);
+  for (let i = 0; i < 5; i++) setTimeout(() => blip('click'), 260 + i * 240);
+  ramp(rainGain?.gain, 0, 1.5);
+  ramp(droneGain?.gain, 0, 1.5);
+  flashEl.classList.add('on');
+  setTimeout(() => {
+    document.exitPointerLock?.();
+    outVid.style.display = 'block';
+    outVid.currentTime = 0;
+    outVid.play().catch(() => {});
+    requestAnimationFrame(() => { outVid.style.opacity = 1; });
+    flashEl.classList.remove('on');
+  }, 1500);
+}
+outVid?.addEventListener('ended', () => {
+  outVid.style.opacity = 0;
+  setTimeout(() => {
+    outVid.style.display = 'none';
+    // 落到最后一段：他家门外的灌木丛里，视角正对着那道门
+    jumpTo('outside', 0.30);
+    leaving = false;
+    S.dread += 1;
+    blip('note');
+    say('……你蹲在他家门外的灌木丛里。那个纸箱不知道什么时候放下的。'
+      + '他就在前面，正在开门。', 7000);
+    // 箭头已经由 jumpTo -> applyGuide 指到灌木上了：这一段由玩家自己点"躲进灌木丛"
+    // 开演，不设自动计时器。
+    // 接下来那两张户外图和门里那张先解码好，等到溶解那一刻再下载会卡一下
+    loadPano(PANO_OUT_HIM);
+    loadPano(PANO_OUT_EMPTY);
+    loadPano(NODES.hishouse.pano);
+    loadPano(NODES.hisbed.pano);
+  }, 900);
+});
+// ——— 灌木丛：两个小时后他出门 ———
+// 换的只是贴图不是节点：叠一层同样的球做交叉溶解，溶完把 A 的底图换成最终那张。
+// 注意 uDay 在白天恒为 1，画面实际取的是 uDayMap 那个采样器，所以两个都要换，
+// 只换 mat.map 的话屏幕上还是旧图。
+const fades = [];
+function fadePano(url, ms) {
+  const m = new THREE.MeshBasicMaterial({map: loadPano(url), side: THREE.BackSide,
+                                         depthTest: false, transparent: true, opacity: 0});
+  const mesh = new THREE.Mesh(geoFor(node), m);
+  mesh.renderOrder = 3 + fades.length;
+  scene.add(mesh);
+  fades.push({m, mesh, t0: performance.now(), ms});
+  return sleep(ms);
+}
+function settlePano(url) {
+  const tex = loadPano(url);
+  NODES[node].pano = url;
+  A.mat.map = tex;
+  A.mat.needsUpdate = true;
+  A.uDayMap.value = tex;
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+}
+let hedgeRunning = false;
+const plateEl = document.getElementById('plate');
+// 每张贴片都带一个 object-position，不过自从 #plate 从 cover 改成 contain 之后，
+// 它基本只是留着：contain 会把整张图完整装进窗口，短边方向才有余量可偏。
+//   门口那张已经重做成横构图了（him-door-v2.jpg，1536x1024，跟 claire-underbed 一个尺寸）：
+//   旧版 him-door.jpg 是竖的 1023x1537，contain 之后左右两条黑边吃掉一半画面。
+//   头发那张（1023x1537）还是竖的，横屏里是高度顶满、左右留黑边，竖向偏移不起作用，
+//   所以那个 15% 是无害的历史值，捏着头发的手指完整在画面里。
+const PLATE_DOOR = ['images/him-door-v2.jpg', '50% 50%'];
+const PLATE_HAIR = ['images/hair-light.jpg', '50% 15%'];
+// 被发现那一下：Claire 把头倒过来伸进床底。这张是横构图（参考图先裁成了 16:9），
+// 所以居中取景就行，不用像上面两张那样往上偏。
+// 注意别和通讯录里那个 Sarah 搞混：Sarah 是闺蜜，Claire 是 Jude 的新女友。
+const PLATE_CLAIRE = ['images/claire-underbed.jpg', '50% 50%'];
+// 客厅架子上那个相框里的合照。构图是"一张照片的照片"：木框内沿、玻璃反光、印刷颗粒，
+// 四周的架子和房间失焦。参考图是 tools/make_couple_ref.py 拼的两人板（左 Jude 右 Claire）——
+// 生图脚本只吃一个参考图，想同时锁两张脸只能这么拼。
+const PLATE_FRAME = ['images/frame-couple.jpg', '50% 50%'];
+// 对峙那一幕。都是横构图，居中取景。
+// 切换时直接换 src 不摘 .on——那个 7 秒的缓慢推近就不会重置，几张之间是硬切，
+// 但推近是连着的，看着像一个长镜头里的几次剪辑。
+// -v2 是重跑的：报警那张改成"一只手托着手机、另一只手食指悬在屏幕上"，
+// 打量那张的表情从"淡淡地笑"改成下颌抬起、眼皮压低的轻蔑。
+// 两张的衬衫都锁成了同一件素色浅蓝，前后才对得上。旧的两张先留着不删。
+const PLATE_STANDOFF = ['images/claire-standoff-v2.jpg', '50% 50%'];
+const PLATE_APPRAISE = ['images/claire-appraise-v2.jpg', '50% 50%'];
+// 动作那两张。CHOKE 是逆光近剪影 + 大幅度运动模糊，只看得见伸进画面的两条小臂；
+// FLOOR 是从站着的高度俯看，唯一的光源是掉在她头发边上那块还亮着的屏幕。
+const PLATE_CHOKE = ['images/claire-choke.jpg', '50% 50%'];
+const PLATE_FLOOR = ['images/claire-floor.jpg', '50% 50%'];
+const PLATE_AFTER = ['images/after-hand.jpg', '50% 50%'];
+// 结局前最后一个画面：平躺看天花板。百叶窗那道光已经爬到墙和天花板的交界上——
+// 前面几张里它从床上移到墙上，这张接着往上走，是这一章唯一的时间交代（天快黑了）。
+// 画面里什么都没有，故意的：这一拍全靠静。
+const PLATE_CEILING = ['images/ceiling.jpg', '50% 50%'];
+// "手机没掏出来"那一支的收尾：邻居家临街窗户玻璃里面贴着的那张 A4 出租启事。
+// 这张必须是贴片——全景图那个分辨率上一张纸连白点都算不上，字更别想。
+// 也是这批图里唯一允许出现文字的一张（生图的 TAIL 默认写着 no text，这张单独放开）。
+const PLATE_TOLET = ['images/tolet.jpg', '50% 50%'];
+// 杀掉 Claire 那条线的尾声：报纸头版，上面是她的入狱照。
+// 这是全片唯一一次给主角的脸——前面每张贴片都躲着它（连穿衣镜都刻意避开），
+// 所以这一下才有分量：她的脸第一次出现，是在一张囚照上。
+// 报纸上她的名字任何地方都看不清，这是故意的，接 Claire 最后那句「你叫……什么来着？」。
+const PLATE_NEWS = ['images/news-jailed.jpg', '50% 50%'];
+// 床底下那三张。都是不喂参考图、21:9 出的横构图（1774x887），画面里没有人脸。
+// 注意 PLATE_PRESS 那一拍**不能**上贴片：床震是 3D 相机在动，贴片一盖住就感觉不到了，
+// 所以「床板往下压」那句反而要 hidePlate。
+const PLATE_FEET = ['images/feet-gap.jpg', '50% 50%'];
+const PLATE_BUCKLE = ['images/buckle.jpg', '50% 50%'];
+const PLATE_LEAVE = ['images/he-leaves.jpg', '50% 50%'];
+// ——— 第二章 · 隔壁 ———
+// 三张 peep 是同一套构图：整屏黑，正中一个小圆亮斑，斑里才是隔壁。
+// 所以这三张一定要 contain（别撑满），撑满会把那个圆孔裁到边上去。
+const PLATE_DENT = ['images/wall-dent.jpg', '50% 50%'];
+const PLATE_DRILL = ['images/drill-wall.jpg', '50% 50%'];
+const PLATE_PEEP1 = ['images/peep-alone.jpg', '50% 50%'];
+const PLATE_PEEP2 = ['images/peep-two.jpg', '50% 50%'];
+const PLATE_PEEPC = ['images/peep-claire.jpg', '50% 50%'];
+const PLATE_BOX = ['images/shoebox.jpg', '50% 50%'];
+// 第二章的死法：跟第一章那张 claire-underbed 是同一个机位、同一张倒过来的脸，
+// 唯一的区别是这次她在笑——因为这一次她早就知道床底下有人。
+const PLATE_CLAIRE2 = ['images/claire-underbed-2.jpg', '50% 50%'];
+// 内页豆腐块：失踪的房客，二十二岁，最后一次被看见是周日。没有照片，也没有名字。
+const PLATE_MISSING = ['images/news-missing.jpg', '50% 50%'];
+for (const [u] of [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
+                   PLATE_STANDOFF, PLATE_APPRAISE,
+                   PLATE_CHOKE, PLATE_FLOOR, PLATE_AFTER, PLATE_CEILING,
+                   PLATE_TOLET, PLATE_NEWS,
+                   PLATE_FEET, PLATE_BUCKLE, PLATE_LEAVE]) {
+  const im = new Image(); im.src = u;
+}
+const darkEl = document.getElementById('dark');
+const darkOn = () => darkEl.classList.add('on');
+const darkOff = () => darkEl.classList.remove('on');
+function showPlate([src, pos]) {
+  plateEl.src = src;
+  plateEl.style.objectPosition = pos;
+  plateEl.classList.add('on');
+}
+const hidePlate = () => plateEl.classList.remove('on');
+async function hedgeBeat() {
+  if (hedgeRunning || has('heLeft') || node !== 'outside') return;
+  hedgeRunning = true;
+  walking = true;                              // 借走动状态屏蔽点击、热点和引导
+  const setBtn = document.getElementById('settings');
+  setBtn.style.display = 'none';               // 演出期间右上角别飘着一个按钮
+  camTarget.set(0, -0.10, 0);                  // 往灌木深处缩：脑袋沉到叶子后面
+  fovTarget = 62;                              // 视野收窄，像从叶缝里往外看
+  blip('whoosh');
+  say('你把身子往灌木更深处缩了缩。树叶合上了，只剩一道缝。', 3400);
+  await waitStep(3000);
+  await fadePano(PANO_OUT_HIM, 1600);          // 远景：门开了，他站在门口
+  say('两个小时后，那扇门开了。', 3000);
+  await waitStep(2600);
+  showPlate(PLATE_DOOR);                       // 特写：这才看得清脸
+  say('他就站在门口，低头看着手机。你看得清他的脸——他一次都没往这边看。', 6000);
+  await waitStep(6400);
+  say('你跟了他很久了，久到知道他的每一个习惯——每个周六晚上，他都要和 Claire 出去。', 6200);
+  await waitStep(6600);
+  hidePlate();
+  await sleep(1400);
+  await fadePano(PANO_OUT_EMPTY, 1800);
+  settlePano(PANO_OUT_EMPTY);
+  mark('heLeft');
+  S.dread += 1;
+  camTarget.set(0, 0, 0);                      // 从灌木里站起来
+  fovTarget = nodeFov(node);
+  walking = false;
+  setBtn.style.display = '';
+  applyGuide();                                // 他走了，箭头改指那扇门
+  buildSpots(node);
+  blip('note');
+  say('门口空了。整条街上只剩你还站在原地。', 5200);
+  save();
+}
+// 钻到床底下。不黑场、不瞬移：先把视线和身体往地板上压，再把全景图溶解成床底那张，
+// 溶到不透明之后才在底下换节点，所以那一下硬切看不见（jumpTo 把相机拉回原点也正好——
+// 床底那张图本来就是趴在地板上拍的，视点已经在图里了）。
+let duckRunning = false;
+async function duckUnderBed() {
+  if (duckRunning || has('hidUnder') || node !== 'hisbed') return;
+  duckRunning = true;
+  walking = true;                              // 借走动状态屏蔽点击、热点和引导
+  const setBtn = document.getElementById('settings');
+  setBtn.style.display = 'none';
+  sceneId++;                                   // 掐断上一段还没走完的字幕
+  voxLoad('breath');                           // 先解码好，免得床底那段起震时还在等文件
+  for (const n of ['cloth-off', 'bye-man', 'buzz', 'buzz-loud', 'scream', 'siren']) voxLoad(n);
+  camTarget.set(0, -0.34, 0);                  // 蹲下去
+  viewV = Math.min(0.86, viewV + 0.22);        // 视线跟着往地板上落
+  fovTarget = 68;
+  blip('step');
+  say('你把外套下摆塞进腰里，趴下去。', 3200);
+  await waitStep(2600);
+  blip('whoosh');
+  say('地板是凉的。你侧过身，一寸一寸往那道缝里挪。', 3600);
+  await waitStep(3000);
+  await fadePano(NODES.underbed.pano, 1800);
+  jumpTo('underbed', 0.35);                    // 溶解已经盖满了，这一下切不出来。
+                                               // 0.35 是那道缝里东西最多的方向（门、洗衣篮、书架底层）
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  mark('hidUnder');
+  S.dread += 4;
+  camTarget.set(0, 0, 0);
+  fovTarget = nodeFov(node);
+  walking = false;
+  setBtn.style.display = '';
+  duckRunning = false;
+  NODES.underbed.onArrive?.();                 // jumpTo 不会自己调 onArrive
+  save();
+}
+// 床底下那一段。全程不给玩家任何可点的东西——她此刻唯一能做的事就是不出声。
+// 两段实录音（cloth-off / breath）名字都不以 jude 开头，走的是"房间里"那条链路。
+// 床震靠 shakeTarget：慢、低、幅度只有两三厘米，比抖屏克制，也更难受。
+// 情绪落点不写在动作上，写在"哪一块床板会响"这件只有她知道的事上。
+async function underBedBeat() {
+  if (has('sawThem')) return;
+  mark('sawThem');
+  await sleep(1000);
+  say('你贴着地板躺下，不敢再往里挪。从这道缝里，你只看得见这个房间的地面。', 6000);
+  await waitStep(5400);
+  await callScene([
+    {t: '楼梯响到最后一级。门被推开了。', d: 3.8, f: () => blip('step')},
+    {t: '两双脚进了那道缝里。他的球鞋，和一双细高跟——鞋跟磕在地板上，'
+        + '就在你眼睛前面半米。', d: 6.8,
+     f: () => { blip('step'); showPlate(PLATE_FEET); }},
+    {a: 'cloth-off', d: 6.0,
+     t: '布料的声音。皮带扣掉在地板上，弹了一下，滚进你手边的灰里。',
+     f: () => showPlate(PLATE_BUCKLE)},
+    // 震动和喘息同一刻起：等这段循环真的出声了才给震动幅度（见 startBedShake）。
+    // 这一句要把贴片撤掉——床震是相机在动，贴片盖着就白震了。
+    {t: '你头顶那几块床板往下压了一寸。灰从缝里落下来，落在你的睫毛上。', d: 6.4,
+     f: () => { hidePlate(); blip('note'); startBedShake(0.024); }},
+    {t: '你伸手捂住自己的嘴。两只手，一只压着另一只。', d: 6.2},
+    {t: '这张床你睡过两年。你还记得哪一块床板会响——它现在正替另一个人响。', d: 7.2},
+    {t: '你没有闭眼。你一下一下数着床板压下来的次数，像在数别的什么东西。', d: 6.8,
+     f: () => { S.dread += 6; }},
+    // 震动和喘息一起收：都在这句字幕底下淡出，收在一片静里
+    {t: '眼泪是横着流的，流进耳朵里，凉的。你一声都没出。', d: 6.6,
+     f: () => { shakeTarget = 0; loopSfx('breath', false); }},
+  ]);
+  shakeTarget = 0;                             // 整段被打断也不留下一个还在震的床
+  loopSfx('breath', false);
+  save();
+  await judeLeavesBeat();
+}
+// 他走了，房间里只剩 Claire——和床底下的她。
+// 这一段的落点是那个二选一：口袋里的手机在响，而她此刻唯一的资本就是"没人知道她在这儿"。
+// 关掉是保命，留着是她自己都说不清的那点东西。两条都不给评价，只给后果。
+async function judeLeavesBeat() {
+  if (has('judeLeft2')) return;
+  mark('judeLeft2');
+  await sleep(2600);
+  await callScene([
+    {t: '过了很久。你不知道多久——你已经数不下去了。', d: 5.4},
+    {t: '床板抬起来了。有人下床，在地板上找衣服，拉链拉到一半又松开。', d: 6.6,
+     f: () => blip('step')},
+    {a: 'bye-man', d: 5.6,
+     t: '他在门口跟她说了两句话。每周六晚上他都有个局——男生们的聚会。这件事你也知道。'},
+    {t: '门关了。过了几秒，楼下那道门也关了。', d: 5.2,
+     f: () => { blip('step'); showPlate(PLATE_LEAVE); }},
+    {t: '整栋房子里现在只有两个人：床上的 Claire，和床底下的你。', d: 6.4,
+     f: () => { hidePlate(); S.dread += 3; }},
+    // 手机在这一刻起震，之后一直循环，直到玩家做出选择（或者根本不选）
+    {t: '然后，你裤子口袋里的手机开始震动。', d: 4.6,
+     f: () => loopSfx('buzz', true)},
+    {t: '你没想到它会在这个时候响。隔着一层布、一层地板，那声音闷得几乎听不见——'
+        + '低低的一下一下，蹭着木头。应该没人会注意到。应该。', d: 8.4,
+     f: () => { S.dread += 2; }},
+  ]);
+  const pick = await askChoice(
+    '掏出手机，把震动关掉',
+    '不动。就让它这样响下去');
+  if (pick === 0) {
+    // "掏出来关掉"不是安全选项——闷响是裤子和地板替她压住的，一抽出来就压不住了。
+    // 所以这一支直接走到被发现：buzz 换成 buzz-loud（原声、100%、几乎瞬切）。
+    mark('phoneOut');
+    await callScene([
+      {t: '你把手一寸一寸往口袋里探。手指刚碰到机身，它又震了一下，撞在你的指节上。', d: 7.0},
+      {t: '你把它抽出来。', d: 2.8,
+       f: () => {
+         loopSfx('buzz', false, {fade: 0.04});
+         loopSfx('buzz-loud', true, {fade: 0.04});
+       }},
+      {t: '——原来它一直响得这么大声。刚才那层闷，是裤子和地板替你压住的；'
+          + '手一抽出来，整个床底下都在跟着它嗡。', d: 8.2,
+       f: () => { S.dread += 5; }},
+      {t: '床上的呼吸声停了。', d: 4.4, f: () => blip('note')},
+      {t: '一缕金棕色的头发垂进了那道缝里。', d: 5.2,
+       f: () => { showPlate(PLATE_CLAIRE); S.dread += 8; blip('sting'); }},
+      {t: '她把头倒过来，伸进了床底。你看得清她的眼睛。她也看得清你。', d: 9.0},
+    ]);
+    await caughtBeat();
+  } else {
+    mark('phoneLeftOn');
+    S.dread += 4;
+    await callScene([
+      {t: '你没有动。你让它继续在你腿边响。', d: 4.8},
+      {t: '一下。一下。你数着它，像刚才数床板那样。', d: 5.4},
+      {t: '床上的呼吸停了一拍。', d: 4.6, f: () => blip('note')},
+    ]);
+    await claireLeavesBeat();
+  }
+  save();
+}
+// ——— 支线：手机没掏出来 ———
+// 她赌对了：闷在裤子和地板之间的那点震动，床上的人没听清。手机自己响完停了，
+// Claire 也走了——所以这一支没有对峙、没有尸体，她是自己从这栋房子里走出去的。
+// 这一支的收尾落在邻居家窗户上那张出租启事：那是下一章的入口（搬进来、墙上钻洞），
+// 所以结局卡是开着口的，不是终局。
+async function claireLeavesBeat() {
+  if (has('claireLeft')) return;
+  mark('claireLeft');
+  await sleep(1800);
+  await callScene([
+    // 手机自己停——一通电话不会响一百秒。声音得先停，后面那些"静"才立得住。
+    {t: '然后它停了。响完最后一下，自己停的。', d: 5.4,
+     f: () => loopSfx('buzz', false, {fade: 1.4})},
+    {t: '床上那个人翻了个身。床板在你脸上方压下来一点，又抬回去。', d: 7.0},
+    {t: '她没有起来看。她什么都没听见。', d: 5.4},
+    {t: '你在这道缝里躺着，一动不动。灰落在你的睫毛上，你连眼都不敢眨。', d: 7.4},
+    {t: '后来床板整个抬起来了。她下床了。', d: 5.4, f: () => blip('step')},
+    {t: '一双光脚落在你眼前的地板上，很近。她在捡地上的衣服。', d: 6.8},
+    {t: '拉链拉上。然后那双高跟鞋被她提在手里——她没穿，光着脚走出了房间。', d: 7.8,
+     f: () => blip('step')},
+    {t: '楼梯响了七级。第八级她没踩上去——那一级会叫，你也从来不踩那一级。', d: 7.6,
+     f: () => { S.dread += 3; }},
+    {t: '楼下那道门开了，又关上了。', d: 5.0, f: () => blip('note')},
+    {t: '然后这栋房子里就只剩你一个人了。在他的床底下。', d: 6.6},
+  ]);
+  applyGuide();                                // 箭头指向那道亮着的缝：可以爬出去了
+  buildSpots(node);
+  save();
+}
+// 爬出来。跟 duckUnderBed 是一对：那边是钻进去（蹲下、收窄视野、溶到床底那张），
+// 这边溶回卧室全景。jumpTo 会把机位、视角、fov 全部归位，所以这里不用自己复原。
+let crawlRunning = false;
+async function crawlOutBeat() {
+  if (crawlRunning || has('outOfBed') || node !== 'underbed') return;
+  crawlRunning = true;
+  walking = true;
+  const setBtn = document.getElementById('settings');
+  setBtn.style.display = 'none';
+  sceneId++;                                   // 掐断上一段还没走完的字幕
+  say('你把手撑在地板上，一寸一寸往那道亮的地方挪。', 3600);
+  await waitStep(3000);
+  blip('whoosh');
+  say('肩膀刮到床架。你停下来听了听——整栋房子都没有声音。', 3800);
+  await waitStep(3200);
+  await fadePano(NODES.hisbed.pano, 1800);
+  jumpTo('hisbed', 0.30);                      // 溶解已经盖满了，这一下切不出来
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  mark('outOfBed');
+  walking = false;
+  setBtn.style.display = '';
+  crawlRunning = false;
+  await sleep(700);
+  await callScene([
+    {t: '房间是空的。被子掀着一半，枕头上留着一个头的凹痕——不是你那一侧的枕头。', d: 7.8},
+    {t: '你站在屋子中间，外套上全是灰。没有人知道你来过这里。', d: 7.0},
+    {t: '你伸手把被子拉平了。你不知道自己为什么要拉平它。', d: 6.8,
+     f: () => { S.dread += 2; }},
+  ]);
+  save();
+}
+// 这条支线的最后一拍：街上、路灯下、隔壁那户窗玻璃里贴着的一张"待租"。
+// 只有一张贴片（字必须看得清，全景图上那张纸根本不存在），说完直接上结局卡。
+// 这一拍不加不安值：这里的东西不是恐怖，是一个念头刚长出来。
+async function toLetBeat(h) {
+  if (has('sawToLet')) { say('那张纸还贴在那儿。电话号码你已经记住了。', 3400); return; }
+  mark('sawToLet');
+  if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
+  applyGuide();                                // 这一步做完了，箭头收掉
+  blip('note');
+  await callScene([
+    {t: '隔壁那户的窗玻璃里面贴了一张纸。你以前从来没注意过。', d: 6.4},
+    {t: '待租。三居室，即刻可入住，下面是一个电话号码。', d: 6.0,
+     f: () => showPlate(PLATE_TOLET)},
+    {t: '玻璃后面那间屋子是空的：地板露着，没有家具，没有窗帘。', d: 7.0},
+    {t: '这一整排房子是连在一起的。他家和这一户之间，只隔着一堵墙。', d: 7.2},
+    {t: '你站在路灯底下，把那个号码看了很久。', d: 6.0},
+    {d: 1.8, f: hidePlate},
+  ]);
+  save();
+  await sleep(1200);
+  showEnding(END_TOLET);
+}
+// ======================= 第二章 · 隔壁 =======================
+// 第一章她是"跟过去"，第二章她是"住下来"——这一章所有的事都发生在她自己家里，
+// 隔着一堵墙。她这次不是闯进别人的房子，她是合法的房客，有钥匙，有房租，
+// 墙是她那一侧的墙，洞是她自己钻的。这比第一章更难受，因为一样都不违法。
+// 结构：搬进来 → 墙脚那个凹坑 → 电钻打通（二选一）→ 偷看①他一个人 →
+//       偷看②两个人 → Claire 回头看那个洞 → 周二回他家钻回床底 →
+//       鞋盒（四十七张照片全是她自己）→ 倒过来那张脸，这次是笑着的。
+async function chapter2Start() {
+  if (has('ch2')) return;
+  mark('ch2');
+  // 这一章的贴片到这时候才预加载：开局就压进去十张图没必要，走到这儿再拉
+  for (const [u] of [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2,
+                     PLATE_PEEPC, PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]) {
+    const im = new Image(); im.src = u;
+  }
+  voxLoad('drill');
+  sceneId++;
+  hidePlate();
+  walking = true;
+  await fadePano(PANO_ND_LIVING, 2200);
+  jumpTo('ndliving', 0.425);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = false;
+  await sleep(900);
+  await callScene([
+    {t: '周日。中介在门口把钥匙给了你，两把，钥匙圈上还挂着上一个房客的号码牌。', d: 8.0},
+    {t: '他问你为什么非要这一户。你说采光好。他笑了，说这一排的采光都一样。', d: 8.4},
+    {t: '房子是空的。地板露着，墙上留着别人挂过东西的浅色方块。你没带家具。', d: 7.8},
+    {t: '你站在客厅正中间，听见水管在响——不是你这边的水管。', d: 7.0,
+     f: () => { S.dread += 2; }},
+  ]);
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// 第一次上楼进这间空卧室。这里只说一件事：两间卧室是背靠背的。
+function ndBedArrive() {
+  if (has('ndBedIn')) return;
+  mark('ndBedIn');
+  setTimeout(() => say('这间卧室在他那间的背面。你昨天在他家上过一次楼——'
+                     + '你知道那张床就贴在这面墙的另一侧。', 8000), 900);
+}
+// 墙脚那个凹坑。整章的支点：她没有蓄谋，是墙先给了她一个开口。
+async function dentBeat(h) {
+  if (has('sawDent')) { say('那个凹坑还在那儿。指甲盖那么大。', 3200); return; }
+  mark('sawDent');
+  if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
+  blip('note');
+  await callScene([
+    {t: '这面墙上什么都没有：没有窗，没有插座，连挂过东西的浅印子都很淡。它就是那堵墙。', d: 8.4},
+    {t: '你把耳朵贴上去。那边有电视的声音，闷成一团，听不出在放什么。', d: 7.2},
+    {t: '然后你在墙脚看见了它——一个指甲盖那么大的凹坑，上一家拧膨胀螺栓留下的，没人补。', d: 9.0,
+     f: () => showPlate(PLATE_DENT)},
+    {t: '你把手指伸进去。里面是软的，石灰一碰就往下掉。', d: 6.6},
+    {t: '像有人已经替你打好了一半。', d: 5.2, f: () => { S.dread += 3; }},
+    {d: 1.6, f: hidePlate},
+  ]);
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// 二选一：现在就钻，还是等隔壁有声音的时候钻。
+// 两条都通到同一个洞——区别只在"她有多懂怎么不被发现"。
+// 等声音那一条不是更安全的善良选项，是更熟练的那一条，所以不安值反而给得更多。
+async function drillBeat(h) {
+  if (has('holeOpen') || drillRunning) return;
+  if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
+  drillRunning = true;
+  await callScene([
+    {t: '你把电钻从箱子里拿出来。钻头装的是最细的那一支——四毫米，够了。', d: 7.4},
+    {t: '你跪在睡袋上，把钻头对进那个凹坑里。手很稳，你自己都意外。', d: 7.4,
+     f: () => showPlate(PLATE_DRILL)},
+  ]);
+  const pick = await askChoice(
+    '现在就钻',
+    '等隔壁有声音的时候再钻');
+  if (pick === 0) {
+    mark('drillNow');
+    S.dread += 3;
+    await callScene([
+      {t: '你没有等。你按下了扳机。', d: 4.2},
+    ]);
+    await drillThrough(false);
+  } else {
+    mark('drillWaited');
+    S.dread += 5;
+    await callScene([
+      {t: '你把电钻放在腿上，坐在墙根等。', d: 5.0, f: hidePlate},
+      {t: '等了一个多小时。九点半，墙那边的水管响起来——他洗澡的时间从来没变过。', d: 8.6},
+      {t: '你知道水声能盖住什么。这件事你以前就知道：他洗澡的时候，你在厨房打碎过一只杯子，'
+          + '他什么都没听见。', d: 9.4},
+      {t: '你按下扳机。', d: 3.6, f: () => showPlate(PLATE_DRILL)},
+    ]);
+    await drillThrough(true);
+  }
+  drillRunning = false;
+}
+// 打通。电钻那段是实录（audio/drill.mp3，从用户给的 MP4 里抽的），循环播，
+// 钻穿那一下停。这一段不写"她犹豫"——她一次都没停过手，这才是这一章的恐怖。
+async function drillThrough(waited) {
+  loopSfx('drill', true, {fade: 0.05, vol: 0.85});
+  await callScene([
+    {t: '声音比你想的大得多。整面墙都在跟着震，牙齿也在震。', d: 6.6},
+    {t: '白色的粉从孔里往外冒，落在你的膝盖上，落进睡袋的褶子里。', d: 7.0},
+    {t: '钻到一半，阻力忽然没了——钻头空过去了。', d: 6.0,
+     f: () => { loopSfx('drill', false, {fade: 0.25}); blip('note'); }},
+  ]);
+  mark('holeOpen');
+  S.dread += 4;
+  await callScene([
+    {t: '你把电钻抽出来。墙上多了一个洞，四毫米，边上一圈碎白。', d: 7.0,
+     f: hidePlate},
+    waited
+      ? {t: '那边的水声还在响。他什么都没听见。你等的就是这个。', d: 7.2}
+      : {t: '你屏住呼吸听了很久。那边的电视还在响，声音一点没变。他没听见。', d: 7.8},
+    {t: '你把耳朵凑上去。这一次不闷了——那边的声音是干净的，近的，'
+        + '像有人就坐在你耳朵旁边。', d: 8.4},
+    {t: '你把碎白扫进手心，倒进纸箱里。地板上一点都没留。', d: 7.0,
+     f: () => { S.dread += 2; }},
+  ]);
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// 洞。点第一次是他一个人——这一拍故意写得温柔，因为她要的从来不是抓奸，
+// 是看他一个人待着的样子。点第二次才是两个人，然后 Claire 回头。
+let drillRunning = false;
+let peepRunning = false;
+async function peepBeat(h) {
+  if (peepRunning) return;
+  // 看过两次之后这个洞就不再演了，但还得给一句回应——热点还在那儿，点了不能没反应
+  if (has('peeped2')) { say('洞还在那儿。那边现在是黑的。', 3200); return; }
+  if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
+  peepRunning = true;
+  if (!has('peeped1')) {
+    mark('peeped1');
+    S.dread += 3;
+    await callScene([
+      {t: '你把眼睛凑到洞上。视野只有一枚硬币那么大，边上全是黑的。', d: 7.2,
+       f: () => showPlate(PLATE_PEEP1)},
+      {t: '灯是暖的。他一个人坐在床边，胳膊搭在膝盖上，低着头。', d: 7.4},
+      {t: '手机在他手里，屏是黑的。他没有在等谁的消息。', d: 6.6},
+      {t: '他就那么坐着，坐了四十分钟。你也就那么看了四十分钟。', d: 7.4},
+      {t: '你以前隔着半张床看过这个背影，那时候你可以伸手拍他。现在你隔着一堵墙，'
+          + '看得比那时候还清楚。', d: 9.0},
+      {t: '这是你搬来以后睡得最好的一晚。', d: 5.6, f: hidePlate},
+    ]);
+    applyGuide();
+    buildSpots(node);
+    save();
+    peepRunning = false;
+    return;
+  }
+  mark('peeped2');
+  await callScene([
+    {t: '周一晚上，灯没有开。', d: 4.6, f: () => showPlate(PLATE_PEEP2)},
+    {t: '窗户那边的天光是灰的。床沿上有两个人，背对着你，肩膀靠在一起。', d: 8.0,
+     f: () => { S.dread += 4; }},
+    {t: '他们什么都没做。就那么坐着，头挨着头，像在说很小声的话。', d: 7.6},
+    {t: '你想过很多种画面，没有一种是这样的。这一种最难看。', d: 7.2},
+    {t: '然后那个长头发的人动了。她转过头，往你这边看。', d: 6.8,
+     f: () => blip('note')},
+    {t: '不是往窗户看，不是往门看。她的眼睛落在墙上，落在离地三十厘米的那一个点上。', d: 9.0},
+    {t: '她站起来了。脚步是往你这边来的。', d: 5.8},
+    {t: '洞里的光被挡住了。', d: 4.4,
+     f: () => { showPlate(PLATE_PEEPC); blip('sting'); S.dread += 6; }},
+    {t: '那边贴着洞的，是一只眼睛。她在笑。', d: 8.0},
+  ]);
+  peepRunning = false;
+  await peepAfter();
+}
+// 被那只眼睛看回来之后的二选一。两条都往周二走——
+// 「堵上」不是逃生门：她第二天自己又把胶带抠开了。这一支只是让她亲手承认这件事。
+async function peepAfter() {
+  const pick = await askChoice(
+    '把洞堵上',
+    '继续看着她');
+  if (pick === 0) {
+    mark('taped');
+    await callScene([
+      {t: '你往后退，撞在纸箱上。你撕了一段胶带，把那个洞封住，又贴了一层。', d: 8.0,
+       f: hidePlate},
+      {t: '你在睡袋里躺了一整夜，脸朝着那面墙。胶带在黑里是白的。', d: 7.6},
+      {t: '第二天早上你把它抠开了。指甲缝里全是胶。', d: 6.4,
+       f: () => { S.dread += 4; }},
+    ]);
+  } else {
+    mark('staredBack');
+    await callScene([
+      {t: '你没有退。你也没有闭眼。', d: 4.6},
+      {t: '你们隔着四毫米互相看着。她的睫毛动了一下，那只眼睛离得那么近，'
+          + '你看得见她眼白上的血丝。', d: 9.0},
+      {t: '过了很久，她把身子撤开了。屋里那盏灯亮起来，她没有喊他，没有回头，'
+          + '什么都没说。', d: 8.6, f: hidePlate},
+      {t: '她只是知道了这件事，然后接着过她的日子。', d: 6.4,
+       f: () => { S.dread += 5; }},
+    ]);
+  }
+  save();
+  await sleep(1600);
+  await ch2BackBeat();
+}
+// 周二。他们都出门了——这一段不给玩家选择，因为她已经不问自己要不要去了。
+// 场景直接落到他家客厅：门还是没锁，钥匙这件事她从来不需要。
+async function ch2BackBeat() {
+  if (has('ch2Back')) return;
+  mark('ch2Back');
+  await callScene([
+    {t: '周二下午，他家的门响了两次：他先走的，她后走的。她走的时候在门口回头看了一眼隔壁。', d: 9.4},
+    {t: '看的是你的窗。你在窗帘后面站着，没有动。', d: 6.6},
+    {t: '门声散了以后，整排房子都很静。', d: 5.6},
+  ]);
+  walking = true;
+  await fadePano(NODES.hishouse.pano, 2000);
+  jumpTo('hishouse', 0.024);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = false;
+  await sleep(800);
+  await callScene([
+    {t: '门还是没锁。这栋房子里只有这一件事是不变的。', d: 6.8},
+    {t: '你想再看一眼那张床。就一眼——你自己也是这么跟自己说的。', d: 7.2},
+  ]);
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// 第二次钻进同一道缝。动作跟 duckUnderBed 一模一样，台词全是回收——
+// 第一次是"她被迫躲"，这一次她是自己趴下去的，而且熟得不用摸。
+let ch2DuckRunning = false;
+async function ch2Duck() {
+  if (ch2DuckRunning || has('ch2Under') || node !== 'hisbed') return;
+  ch2DuckRunning = true;
+  walking = true;
+  const setBtn = document.getElementById('settings');
+  setBtn.style.display = 'none';
+  sceneId++;
+  camTarget.set(0, -0.34, 0);
+  viewV = Math.min(0.86, viewV + 0.22);
+  fovTarget = 68;
+  blip('step');
+  say('你趴下去。这一次不用摸——你知道从哪一边进去肩膀不会刮到床架。', 4200);
+  await waitStep(3400);
+  blip('whoosh');
+  say('地板还是凉的。灰比上次多。', 3400);
+  await waitStep(2800);
+  await fadePano(NODES.underbed.pano, 1800);
+  jumpTo('underbed', 0.35);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  mark('ch2Under');
+  S.dread += 3;
+  camTarget.set(0, 0, 0);
+  fovTarget = nodeFov(node);
+  walking = false;
+  setBtn.style.display = '';
+  ch2DuckRunning = false;
+  save();
+  await sleep(900);
+  await shoeboxBeat();
+}
+// 鞋盒。这一拍是整个游戏的翻面：前面所有的"看"都是她在看别人，
+// 从这一盒照片开始，她才知道自己一直是被看的那一个，而且被看得比她看得仔细。
+// 四十七这个数字要说出口——数得清的东西才吓人。
+async function shoeboxBeat() {
+  if (has('sawBox')) return;
+  mark('sawBox');
+  await callScene([
+    {t: '你侧着身躺进那道缝里。手往里一撑，撞到一个纸盒。', d: 6.6},
+    {t: '上次你没摸到它——上次你不敢往里挪。', d: 5.4},
+    {t: '是一个鞋盒。你把盖子推开。', d: 5.0,
+     f: () => { blip('note'); showPlate(PLATE_BOX); }},
+    {t: '里面全是照片。冲印出来的那种，边上带白框，摞得很整齐。', d: 7.4},
+    {t: '第一张是站台。有人从背后拍的，站台上那个人是你。', d: 7.0,
+     f: () => { S.dread += 5; }},
+    {t: '第二张是隔着车窗。第三张是超市货架的缝里。第四张是你在睡觉——'
+        + '在你自己的床上，脸埋在枕头里。', d: 9.6},
+    {t: '你一张一张数。四十七张。四十七张里没有一张是他们两个。', d: 8.4,
+     f: () => { S.dread += 6; }},
+    {t: '最上面那张压着一小片横格纸，蓝色圆珠笔，字写得很轻：', d: 7.0},
+    {t: '「她还会来的。」', d: 6.0, f: () => blip('sting')},
+    {t: '楼下那道门开了。', d: 4.6, f: () => { hidePlate(); blip('step'); }},
+  ]);
+  await ch2DeathBeat();
+}
+// 死法：跟第一章那张 claire-underbed 是同一个机位、同一张倒过来的脸。
+// 唯一的区别是这一次她在笑——因为这一次她早就知道床底下有人。
+// 动手一律不给画面：字幕停在她伸手进来那一下，剩下的交给一片黑。
+async function ch2DeathBeat() {
+  await callScene([
+    {t: '脚步上楼。七级。第八级她也没有踩——她跟你一样避开了那一级。', d: 8.4,
+     f: () => { S.dread += 4; }},
+    {t: '你不敢往里挪，也不敢往外爬。你只是把手按在照片上，把它们按平。', d: 7.8},
+    {t: '房间的灯没有开。她走到床边，站着，没有出声。', d: 7.0},
+    {t: '然后地板上落下一片影子。她蹲下来了。', d: 6.2, f: () => blip('note')},
+    {t: '一缕金棕色的头发垂进那道缝里。', d: 5.6},
+    {t: '她把头倒过来，伸进了床底。', d: 5.4,
+     f: () => { showPlate(PLATE_CLAIRE2); blip('sting'); S.dread += 8; }},
+    {t: '她没有叫。她一点都不意外。', d: 6.0},
+    {t: '她笑了——嘴角很小地往上抬了一下，像终于对上了一件早就摆好的东西。', d: 8.6},
+    {who: 'Claire', t: '「你来了。」', d: 4.4},
+    {who: 'Claire', t: '「我给你留了位置。」', d: 5.0},
+    {t: '她的手伸进来了。你没有往后躲——你已经在最里面了。', d: 7.6},
+  ]);
+  await sleep(1600);
+  hidePlate();
+  darkOn();
+  await sleep(2600);
+  showPlate(PLATE_MISSING);
+  darkOff();
+  await callScene([
+    {t: '后来的事只有一小块。内页，夹在别的新闻中间。', d: 6.4},
+    {t: '「失踪：房客，二十二岁，最后一次被人看见是周日。」', d: 7.0},
+    {t: '没有照片。放照片的地方是一个空的灰框。', d: 6.4},
+    {t: '底下那行小字写着：邻居们说，他们从来没弄清过她的名字。', d: 8.0,
+     f: () => { S.dread += 3; }},
+    {d: 2.0, f: hidePlate},
+  ]);
+  mark('ch2Dead');
+  save();
+  await sleep(1200);
+  showEnding(END_47);
+}
+
+// 被 Claire 发现之后：尖叫 → 爬出床底 → 对峙 → 她认出你 → 四句话 → 动手 → 事后 → 结局。
+// 三条硬规矩：
+//   1. 全程第一视角，画面里绝对不出现主角自己（每张贴片的构图都刻意避开了那面穿衣镜，
+//      掐脖子那张里只有两条伸进画面的小臂）；
+//   2. 动手只给一张逆光糊掉的剪影，见血/伤痕一律没有——恐怖不在动作上，
+//      在她事后有多熟练：按灭屏幕、擦地板、绕头发，一样都不慌；
+//   3. 最后四句全是回收：擦地板、靠墙那一侧、绕三圈、记得往哪边翻身，
+//      前面每一句都出现过，同样的动作第一次是失落，这次是占有。
+async function caughtBeat() {
+  await sleep(1200);
+  await callScene([
+    {a: 'scream', d: 4.8,
+     t: '尖叫是从很近的地方来的，近到你听见自己的耳朵在响。'},
+    {t: '她整个人往后弹开，头从缝里抽走了。你眼前只剩那道亮着的缝，'
+        + '和她头发扫过地板的影子。', d: 7.0, f: hidePlate},
+    {t: '你不记得自己是怎么从床底下出来的。', d: 4.6},
+    // 手机在这儿自己停——一通电话不会响九十秒，而且这之后的对峙就赤条条地只剩人声了
+    {t: '手机在你手里停了。是它自己停的，响够了就停了。', d: 6.0,
+     f: () => loopSfx('buzz-loud', false, {fade: 1.6})},
+  ]);
+  // 爬出来：全景图溶回卧室。落点朝 0.30，也就是床和门之间——她站的那个方向
+  walking = true;
+  await fadePano(NODES.hisbed.pano, 1600);
+  jumpTo('hisbed', 0.30);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = true;                              // jumpTo 会清掉，这里再挡回来
+  await sleep(700);
+  showPlate(PLATE_STANDOFF);
+  await callScene([
+    {t: '她背对着窗站着，两只手把手机举在胸前，像举着一块盾。', d: 6.0},
+    {who: 'Claire', t: '「你是谁。」', d: 3.6},
+    {who: 'Claire', t: '「你他妈怎么会在这里——你在那底下待了多久？」', d: 6.0},
+    {t: '你没有回答。你也不知道该从哪一句开始回答。', d: 5.6},
+    {who: 'Claire', t: '「我报警了。」', d: 3.4},
+    {t: '你看得见她的屏幕。上面是通讯录，没有拨出去。她的手抖得握不住那三个数字。', d: 7.6},
+    {who: '你', t: '「我没有恶意。」', d: 4.0},
+    {t: '你听见自己的声音。很平，很轻，像在解释一件很小的事。', d: 6.2},
+  ]);
+  // 硬切到打量那张。不摘 .on，所以那个缓慢推近是连着走的
+  showPlate(PLATE_APPRAISE);
+  await callScene([
+    {t: '她的呼吸慢下来了。她开始看你——从你的脸，到你外套上的灰，到你的鞋。', d: 7.2},
+    {t: '她不害怕了。这比她害怕的时候更难受。', d: 5.6},
+    {who: 'Claire', t: '「等等。」', d: 3.0},
+    {who: 'Claire', t: '「你是 Jude 的前女友吧。」', d: 4.6},
+    {t: '她把手机放下了。她已经不需要它了。', d: 5.4},
+    {who: 'Claire', t: '「过去的就放下吧。总盯着别人的男朋友，不太体面。」', d: 6.4},
+    {who: 'Claire', t: '「他跟我讲过你。我们还笑过。」', d: 5.2},
+    {who: 'Claire', t: '「他说你又笨又丑，拿不出手——原话。他随便应你两句，'
+        + '你就当他有多喜欢你。」', d: 8.6, f: () => { S.dread += 4; }},
+    {who: 'Claire', t: '「你叫……什么来着？」', d: 5.4, f: () => blip('note')},
+  ]);
+  // 第四幕：动作只给一张，而且是逆光糊成剪影的一张——看得见两条伸进画面的小臂，
+  // 看不清谁在动手。黑场不再藏整个过程了，只当标点用：两秒半，把"多久"剪掉。
+  showPlate(PLATE_CHOKE);
+  await callScene([
+    {t: '你不记得自己是什么时候走过去的。', d: 5.2},
+    {t: '你只记得两件事：她的脖子比你想的细，和她的手机掉在地板上的那一声。', d: 7.6,
+     f: () => blip('step')},
+  ]);
+  darkOn();
+  await sleep(2500);
+  showPlate(PLATE_FLOOR);                      // 先把下一张垫在黑场底下，再淡开黑场
+  await sleep(200);
+  darkOff();
+  await callScene([
+    {t: '她躺在地板上。那件衬衫是他的——她穿着他的衬衫，躺在他的房间里。', d: 7.2},
+    {t: '她的眼睛还开着，只是没有在看任何东西。', d: 6.0,
+     f: () => { S.dread += 4; }},
+    {t: '手机掉在她头发边上，还亮着。屏幕上是那三个没拨出去的数字。你把它按灭了。', d: 7.8,
+     f: () => blip('click')},
+  ]);
+  showPlate(PLATE_AFTER);                      // 硬切，推近是连着的
+  await callScene([
+    {t: '房间里很安静。窗外那道光已经从床上移到墙上去了。', d: 6.6},
+    {t: '你把地板擦了。你知道抹布在哪儿——楼下水槽底下第二格，他从来不换地方。', d: 7.8,
+     // 警笛提前到这一句就起：等她躺下的时候，那声音已经在窗外某个地方响着了。
+     // 44 秒的曲线正好铺到「它越来越近了」那句说完（7.8+5+7.6+4.8+5.2+6.4+7 ≈ 43.8）。
+     f: () => startSiren(44)},
+    {t: '然后你上了床。靠墙那一侧。', d: 5.0,
+     f: () => showPlate(PLATE_CEILING)},          // 躺下就换成朝上看天花板那张
+    {t: '枕头上还剩一根她的头发。你把它捏起来，绕在食指上，绕了三圈。', d: 7.6},
+    {t: '你终于又睡在这张床上了。', d: 4.8},
+    {t: '你记得该往哪边翻身。', d: 5.2},
+    // 到这儿警笛已经爬上来了：先让她"听见"，但不解释
+    {t: '很远的地方有警笛。你听着它，没有起来。', d: 6.4},
+    {t: '它越来越近了。你把被子往上拉了一点，盖住肩膀。', d: 7.0,
+     f: () => { S.dread += 3; }},
+  ]);
+  mark('killedClaire');
+  S.dread += 10;
+  save();
+  // 天花板那张多留两秒不动（这一拍就是"什么都没发生"），警笛这时候正压到最响
+  await sleep(2200);
+  // 尾声：报纸。硬切进去——警笛顶在最响的那一下直接切，时间就跳过去了，
+  // 中间那些（门被撞开、被带走、审、判）一个字都不给。
+  showPlate(PLATE_NEWS);
+  stopSiren(3.4);                                // 警笛留在上一场，跟着这一下慢慢收掉
+  await callScene([
+    {t: '后来的事，都在这张纸上了。', d: 5.4},
+    {t: '「痴迷的前女友被判终身监禁。」', d: 5.8},
+    {t: '「她在前男友的床底下躲了六个小时。然后掐死了他的新女友。」', d: 7.6},
+    {t: '照片上的人不笑，眼睛直直地看着镜头，身后是量身高的那把尺。', d: 7.4},
+    {t: '整版报道里没有一处写清她的名字——折痕正好压在那儿。', d: 7.6,
+     f: () => { S.dread += 2; }},
+    {t: '也没有人再提那个男生。他只是"前男友"。', d: 6.8},
+    {d: 2.0, f: hidePlate},
+  ]);
+  await sleep(1200);
+  showEnding(END_BEDSIDE);
+}
+// 每次交互之后：重建热点（条件可能变了）并检查结局。
+// 进了周六这一段之后，原来那三个夜里的结局不再抢戏——收尾交给那道门后面的视频。
+function afterBeat() {
+  buildSpots(node);
+  save();
+  if (S.day) return;
+  for (const e of ENDINGS) {
+    if (e.if()) { showEnding(e); return; }
+  }
+}
+function showEnding(e) {
+  endEl.querySelector('h2').textContent = e.title;
+  endEl.querySelector('p').textContent = e.text;
+  // 有 next 的卡不是终局，是换章：按钮变成"继续"，点下去接着往下演。
+  // 这一步顺手把 endEl 收掉，不然下一章会一直被这张卡盖着。
+  const btn = endEl.querySelector('#end-btn');
+  btn.textContent = e.next ? '继 续' : '再走一遍';
+  btn.onclick = e.next
+    ? () => { hideEnding(); e.next(); }
+    : () => restartGame();
+  endEl.style.display = 'flex';
+  requestAnimationFrame(() => { endEl.style.opacity = 1; });
+  document.exitPointerLock?.();
+  blip('sting');
+  ramp(rainGain?.gain, S.day ? 0 : 0.05, 3);   // 周六是晴天，结局卡也别把雨声放回来
+  ramp(droneGain?.gain, 0.22, 3);
+}
+function hideEnding() {
+  endEl.style.opacity = 0;
+  setTimeout(() => { endEl.style.display = 'none'; }, 900);
+  if (!locked) enterEl.style.display = 'flex';   // 还得让人重新点进来拿回鼠标锁
+}
+// ——— 照片墙 ———
+// 墙上是同一个人的 48 种视角（tools/gen_wall_photos.py 生成），
+// ex-wall.jpg 是 tools/build_wall.py 把这些真的拼贴成的一整面墙，
+// 所以墙上看见的每一张，往下翻都能翻到，没有画出来的假照片。
+// 他是已经分手的前男友。轮播按三幕排：在一起 → 分手后偷拍（由远及近，
+// 最后一张已经在他家里）→ 他有了新女友（镜头还是对着他，被涂掉撕掉的全是那个女生）。
+// ex-30~44 以及 02、08、11、12 只上墙不进轮播，纯粹是为了让墙上不出现重复。
+// （02 是大屏幕侧脸那张，原来在轮播里排第 17，撤掉了；文件留着不删，
+//   ex-wall.jpg 那面墙是 tools/build_wall.py 拼出来的，墙上还有它。）
+// 旁白全部是第二人称："你"就是拍这些照片的人。玩家一开始只是个闯进来的旁观者，
+// 翻到第二张就发现旁白在指认自己——这个反转靠人称，不靠任何一句解释。
+const photosEl = document.getElementById('photos');
+const ORDER = [
+  // 第一幕：在一起的时候。表面是甜的，但从第一张起他就在往外侧身，
+  // "你"的手一路往上——挽胳膊、扣指缝、后颈、下颌、下巴——占有欲是渐强的。
+  [18, '刚在一起那阵子。你挽着他连拍了十几张，只留下这一张——他的身体是微微侧开的，当时你没看出来。', '在一起的时候'],
+  [22, '你的手指扣进他的指缝。那时候你还需要把自己的手也拍进来，不拍进来就不算。'],
+  [20, '你的头靠在他肩膀边上。他一路看着前挡风，没跟你说话，你就一直按快门。'],
+  [26, '你的脸贴在他上臂上。他在看窗外——从这张往后，他每一张都在看别的地方。'],
+  [21, '你的手搭在他后颈，指尖埋进他头发里。这个动作你拍过很多次，他从来不说什么。'],
+  [19, '手机伸到桌子底下拍的。你的小腿压在他腿上，桌面之上他若无其事。你要一个只有你们两个知道的证据。'],
+  [17, '你托住他的下颌，拇指擦过他的脸颊。他的眼神是错愕的——他没料到你会这样拍他。'],
+  [25, '喝完酒，你捏着他的下巴把他的脸抬起来对准镜头。画面在晃，但你不想删。'],
+  [23, '你的手掌覆在他胸口。他躺着，眼睛避开镜头。这是"在一起"的最后一张，那天你还不知道。'],
+  // 第二幕：他走了以后。由远及近，最后一张已经在他家里。
+  [24, '分手那天你剪了这张合照。剪掉的是你自己的整张脸，环在他腰上的那条手臂你留着。', '他走了以后'],
+  [27, '你们最后的聊天记录。背景还是他从前发来的自拍。他说的话你盖掉了，只剩你自己说的那些。'],
+  [1,  '几百个人里，你一眼就找到了他。红圈是回家之后你画上去的。'],
+  [5,  '隔着一整条马路。你没有走过去，只是站在原地把那一卷拍完。'],
+  [3,  '走廊那头，他低头走路。这个距离你喊一声他就会回头。你没有喊。'],
+  [7,  '他拎着袋子走进酒店大门。你在街对面等他进去才按下快门——你要知道他跟谁。'],
+  [4,  '公开直播，两个多小时，你录了全程。边上还留着你没截干净的界面。'],
+  [9,  '你把镜头贴在便利店玻璃上。他在结账，背对着整条街，什么都不知道。'],
+  [6,  '隔着餐厅玻璃。反光里有你自己站在街上的影子——你不在乎被拍进去。'],
+  [10, '两三米。他刚好侧头，画面在抖——是你的手在抖。你已经不怕靠这么近了。'],
+  [13, '隔着矮灌木。你已经站在他住的那栋楼下面了。'],
+  [15, '从楼下仰拍他家阳台。玻璃很脏，反光把他的背影切成两半。你在下面站了很久。'],
+  [14, '楼道门缝。整张几乎全是黑的门框，缝里只有他肩膀的一小块——你已经上楼了。'],
+  [16, '房间角落，从阴影里拍的。他在家，完全没有防备。到这一张，你已经进来过了。'],
+  // 第三幕：后来他有了别人。镜头对准的还是他，被处理掉的全是那个女生。
+  [45, '然后是这一张。他身边那个人的脸你涂了很多遍，涂到纸都磨破了。', '后来他有了别人'],
+  [48, '隔着咖啡馆的玻璃。这一整墙里，他只在这一张里是真的在笑。不是对着你笑的。'],
+  [46, '他发的合照。他的脸你一点没动，旁边那张脸你划了几十道。'],
+  [28, '别人发的快拍里也有他。你截下来，在他旁边贴了一个爱心——像在别人的东西上做个记号。'],
+  [29, '他分享的日常，你用系统画笔圈了出来，旁边写了几行字。字你自己现在也认不出来了，但圈很用力。'],
+  [47, '最后是这张。你撕成了两半，他那半你摊平了，另一半你攥成团又展开。你把它们摆回一起，可是对不齐了。'],
+];
+// 幕名向后继承，显示在右上角的计数旁边
+const ACTS = [];
+ORDER.reduce((cur, [, , a]) => { const c = a || cur; ACTS.push(c); return c; }, '');
+const PHOTOS = [{
+  src: 'images/ex-wall.jpg',
+  text: () => has('foundCamera')
+    ? '一整面墙，全是同一个人。而且有几张的拍摄角度，就是卧室那台三脚架现在对着的方向。'
+    : '一整面墙。你数不清有多少张，但全是同一个人——你已经分手的那个人。开头那几张里两个人都在笑，越往后他越不知道自己在被拍。有几张旁边还多了一个人，那个人的脸被涂掉了。',
+}].concat(ORDER.map(([n, t]) => ({src: `images/ex-${String(n).padStart(2, '0')}.jpg`, text: t})));
+let photoIdx = -1;
+function showPhoto(i) {
+  const was = photoIdx;
+  photoIdx = i;
+  if (i >= 0) setPhone(false);                   // 看照片墙的时候手自然垂下去
+  if (i < 0) {                                   // 看完了，收回来
+    photosEl.classList.remove('on');
+    setTimeout(() => { if (photoIdx < 0) photosEl.style.display = 'none'; }, 320);
+    say('你退开半步。墙还在那儿，安静得像在等你再看一遍。', 4000);
+    return;
+  }
+  if (was < 0) {
+    // 进照片墙这一下把鼠标交还给用户：退出锁定，指针露出来。
+    // 准星不用在这儿管——frame() 每帧按"鼠标是不是锁着"决定它显不显示。
+    document.exitPointerLock?.();
+  }
+  const p = PHOTOS[i];
+  photosEl.querySelector('img').src = p.src;
+  photosEl.querySelector('.cap').textContent = typeof p.text === 'function' ? p.text() : p.text;
+  const act = i > 0 ? `${ACTS[i - 1]}   ` : '';   // 第 0 张是整面墙，不属于任何一幕
+  photosEl.querySelector('.idx').textContent =
+    `${act}${i + 1} / ${PHOTOS.length}   ← → 翻页 · Esc 退出`;
+  photosEl.querySelector('.prev').disabled = i === 0;   // 第一张没有上一张
+  photosEl.style.display = 'flex';
+  requestAnimationFrame(() => photosEl.classList.add('on'));
+  prefetch(i + 1);
+  blip(i === 0 ? 'whoosh' : 'note');
+}
+// 翻到最后一张再往下就是退出。relock：用鼠标关的时候顺手把第一视角锁回来
+//（点击本身就是用户手势，所以这时候 requestPointerLock 是允许的）；
+// 按 Esc 关的那条路不重锁——浏览器刚被 Esc 解锁，立刻再锁会被拦，
+// 交给"点击画面回到第一视角"那层去做。
+function closePhotos(relock) {
+  showPhoto(-1);
+  afterBeat();
+  if (relock) {
+    // 新版 Chrome 的 requestPointerLock 返回 Promise，被拦的时候是异步 reject，
+    // try/catch 抓不到，所以两种情况都挡一下。锁不上也不要紧：
+    // "点击画面回到第一视角"那层还在。
+    try { app.requestPointerLock()?.catch?.(() => {}); } catch (e) {}
+  }
+}
+function nextPhoto() {
+  if (photoIdx + 1 >= PHOTOS.length) closePhotos(true);
+  else showPhoto(photoIdx + 1);
+}
+function prevPhoto() {
+  if (photoIdx > 0) showPhoto(photoIdx - 1);
+}
+photosEl.addEventListener('click', e => {
+  if (photoIdx < 0) return;
+  if (e.target.closest('button')) return;        // 箭头和叉自己有处理
+  nextPhoto();                                  // 照片上、四周空白处：都是下一张
+});
+photosEl.querySelector('.prev').addEventListener('click', e => { e.stopPropagation(); prevPhoto(); });
+photosEl.querySelector('.next').addEventListener('click', e => { e.stopPropagation(); nextPhoto(); });
+photosEl.querySelector('.close').addEventListener('click', e => { e.stopPropagation(); closePhotos(true); });
+// 三十几张一共几十兆，不能一次全预取。开局只拿整面墙那张，
+// 翻页时提前拿后面两张，翻到的时候就已经在缓存里了。
+const prefetched = new Set();
+function prefetch(i) {
+  for (const j of [i, i + 1, i + 2]) {
+    if (j < 0 || j >= PHOTOS.length || prefetched.has(j)) continue;
+    prefetched.add(j);
+    const im = new Image();
+    im.src = PHOTOS[j].src;
+  }
+}
+addEventListener('load', () => prefetch(0));
+
+const goto = (u, v) => { viewU = u; viewV = v; };
+document.getElementById('btn-seam').onclick = () => goto(0.0, 0.5);
+document.getElementById('btn-up').onclick   = () => goto(viewU, 0.05);
+document.getElementById('btn-down').onclick = () => goto(viewU, 0.95);
+document.getElementById('btn-mark').onclick = () => {
+  const line = `{u:${viewU.toFixed(3)}, v:${viewV.toFixed(3)}, label:'', text:''},`;
+  navigator.clipboard?.writeText(line);
+  console.log(node, line);
+  say('已复制到剪贴板：' + line, 3000);
+};
+// ——— 设置面板：重新开始 + 六格存档 ———
+// 注意：Pointer Lock 锁着的时候所有点击都进 #app，DOM 按钮收不到事件，
+// 所以这个按钮和左上角那排一样，要先按 Esc 解锁才点得动。
+const cfEl = document.getElementById('confirm');
+const pnEl = document.getElementById('panel');
+const slotsEl = document.getElementById('pn-slots');
+const SLOT_N = 6;
+const slotKey = i => 'chimi.slot.' + i;
+function readSlot(i) {
+  try { return JSON.parse(localStorage.getItem(slotKey(i)) || 'null'); } catch (e) { return null; }
+}
+// 截图：WebGL 的画布在合成之后就被清掉了（没开 preserveDrawingBuffer），
+// 所以必须在同一个同步块里先 render 再 drawImage，中间不能让出线程。
+function grabThumb() {
+  try {
+    renderer.render(scene, camera);
+    const c = renderer.domElement;
+    const cv = document.createElement('canvas');
+    cv.width = 320;
+    cv.height = Math.max(1, Math.round(320 * c.height / c.width));
+    cv.getContext('2d').drawImage(c, 0, 0, cv.width, cv.height);
+    return cv.toDataURL('image/jpeg', 0.6);
+  } catch (e) { return ''; }
+}
+function writeSlot(i) {
+  const d = snapshot();
+  d.at = Date.now();
+  d.scene = NODES[node].name || node;
+  d.thumb = grabThumb();
+  try {
+    localStorage.setItem(slotKey(i), JSON.stringify(d));
+  } catch (e) {
+    // 六张缩略图撑爆 localStorage 的可能性不大，但真爆了要说话，不能默默丢档
+    say('存档写不进去了（浏览器存储空间满或处于隐私模式）。', 4000);
+  }
+  drawSlots();
+}
+function loadSlot(i) {
+  const d = readSlot(i);
+  if (!d) return;
+  delete d.thumb; delete d.at; delete d.scene;
+  removeEventListener('beforeunload', save);        // 别在卸载的路上把当前进度盖回去
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) {}
+  location.reload();                               // 读档走一遍完整的初始化，最稳
+}
+function slotTime(ms) {
+  const t = new Date(ms), p = n => String(n).padStart(2, '0');
+  return `${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+}
+function drawSlots() {
+  slotsEl.textContent = '';
+  for (let i = 0; i < SLOT_N; i++) {
+    const d = readSlot(i);
+    const el = document.createElement('div');
+    el.className = 'slot';
+    if (d) {
+      const img = d.thumb
+        ? `<img class="shot" src="${d.thumb}" alt="">`
+        : '<div class="empty">·</div>';
+      el.innerHTML = `${img}<div class="meta"><b>存档 ${i + 1} · ${d.scene || ''}</b>`
+        + `<span>${slotTime(d.at)}${d.S && d.S.day ? ' · 周六' : ' · 那个夜里'}</span></div>`
+        + `<button class="del">×</button>`;
+      el.title = '点击读取这一格';
+      el.onclick = () => loadSlot(i);
+      const del = el.querySelector('.del');
+      // 删除要按两下：第一下变成"确认?"，三秒没动作就退回去。比再叠一层弹窗轻。
+      let armed = false, timer = 0;
+      del.onclick = ev => {
+        ev.stopPropagation();
+        if (!armed) {
+          armed = true; del.textContent = '确认?';
+          timer = setTimeout(() => { armed = false; del.textContent = '×'; }, 3000);
+          return;
+        }
+        clearTimeout(timer);
+        try { localStorage.removeItem(slotKey(i)); } catch (e) {}
+        drawSlots();
+      };
+    } else {
+      el.innerHTML = '<div class="empty">+</div>'
+        + `<div class="meta"><b>存档 ${i + 1}</b><span>空</span></div>`;
+      el.title = '点击存到这一格';
+      el.onclick = () => writeSlot(i);
+    }
+    slotsEl.appendChild(el);
+  }
+}
+document.getElementById('settings').onclick = () => {
+  document.exitPointerLock?.();
+  keys.clear();                                    // 按着 W 点开面板的话，别让人一边看存档一边往前走
+  drawSlots();
+  pnEl.style.display = 'flex';
+};
+document.getElementById('pn-close').onclick = () => { pnEl.style.display = 'none'; };
+document.getElementById('pn-restart').onclick = () => { cfEl.style.display = 'flex'; };
+document.getElementById('cf-no').onclick = () => { cfEl.style.display = 'none'; };
+document.getElementById('cf-yes').onclick = () => { restartGame(); };
+
+
+
+function resize() {
+  camera.aspect = innerWidth / innerHeight;
+  renderer.setSize(innerWidth, innerHeight);
+}
+addEventListener('resize', resize);
+resize();
+buildSpots(node);
+for (const name of Object.keys(NODES)) loadDepth(name);   // 异步，载入完成后换掉房间壳
+
+const proj = new THREE.Vector3(), look = new THREE.Vector3();
+const ease = t => t * t * (3 - 2 * t);
+let tvFrame = 0, tvNextCut = 0;
+function frame() {
+  const now = performance.now();
+  if (now >= tvNextCut) {                        // 信号自己在切镜头，间隔不规律才像播放中
+    tvFrame = (tvFrame + 1) % TV_N;
+    tvNextCut = now + 800 + Math.random() * 1400;
+  }
+  for (const r of [A, B]) {                      // 过渡时两个房间各按自己节点的状态走
+    if (!r) continue;
+    const n = NODES[r.name];
+    r.uOff.value += (n.off - r.uOff.value) * 0.12;              // 开关灯过渡约 0.3 秒
+    r.uTvPlay.value += ((n.tvState === 1 ? 1 : 0) - r.uTvPlay.value) * 0.12;
+    r.uTvDark.value += ((n.tvState === 2 ? 1 : 0) - r.uTvDark.value) * 0.12;
+    r.uTvFrame.value = tvFrame;
+    r.uTime.value = now * 0.001;
+    r.uDay.value += ((S.day ? 1 : 0) - r.uDay.value) * 0.014;   // 天亮得慢一点，约 4 秒
+  }
+  fov += (fovTarget - fov) * 0.08;
+  step();
+  syncPhone();
+  for (const f of fades) f.m.opacity = ease(Math.min(1, (now - f.t0) / f.ms));   // 换全景图的溶解
+  if (walking && B) {                            // 过渡中：一边前进一边溶解
+    const t = Math.min(1, (now - walkT0) / walkMs);
+    B.mat.opacity = ease(t);
+    camPos.lerpVectors(walkFrom, walkDest, ease(t));
+    if (stepAt && now >= stepAt) { blip('step'); stepAt = now + 340; }
+    if (t >= 1) finishWalk();
+  } else {
+    camPos.lerp(camTarget, 0.12);                // 平时走动是平滑跟随，不是瞬移
+  }
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
+  camera.position.copy(camPos);
+  shakeAmp += (shakeTarget - shakeAmp) * 0.05;
+  if (shakeAmp > 0.0002) {                       // 竖向为主，横向带一点，相位跟喘息锁在一起
+    const ph = (now - shakeT0) * SHAKE_W;
+    camera.position.y += Math.sin(ph) * shakeAmp;
+    camera.position.x += Math.sin(ph + 0.9) * shakeAmp * 0.35;
+  }
+  camera.lookAt(look.copy(camPos).add(uvToVec(viewU, viewV)));
+
+  // 准星只在"鼠标锁着的第一视角"里有意义。一旦鼠标被交还给玩家——剧情二选一、
+  // 手机上那两个名字、照片墙、举着手机、结局卡（这些地方都会主动 exitPointerLock）——
+  // 屏幕正中挂一个准星只会让人以为还得用准星去瞄，所以整个收掉，露出真正的鼠标指针。
+  const aimOn = locked && photoIdx < 0 && !callOn && !phoneUp
+                && !pickEl.classList.contains('on');
+  crossEl.style.display = aimOn ? '' : 'none';
+  if (aimOn && !walking) {                       // 准星对上可交互物体就亮起来
+    ray.setFromCamera(ndc.set(0, 0), camera);
+    crossEl.classList.toggle('hot', ray.intersectObjects(marks).length > 0);
+  } else {
+    crossEl.classList.remove('hot');
+  }
+
+
+  for (const s of marks) {
+    if (walking) { s.userData.el.style.display = 'none'; continue; }
+    proj.copy(s.position).project(camera);
+    const visible = proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1;
+    const el = s.userData.el;
+    el.style.display = visible ? 'block' : 'none';
+    if (visible) {
+      el.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px';
+      el.style.top = (-proj.y * 0.5 + 0.5) * innerHeight + 'px';
+    }
+  }
+  drawGuide();
+  coordEl.textContent = `${NODES[node].name}  不安 ${S.dread}  u ${viewU.toFixed(3)}  v ${viewV.toFixed(3)}  `
+    + `站位 ${camPos.x.toFixed(2)},${camPos.z.toFixed(2)}m  fov ${fov.toFixed(0)}`
+    + (DEPTH[node] ? '  深度' : '  壳') + `  |  ${panoSize}`;
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+// 画引导箭头。三种情形：目标是 3D 热点且在视野内、在视野外、或者目标是手机（固定 DOM）
+const gDir = new THREE.Vector3();
+function drawGuide() {
+  const g = GUIDE[gStep];
+  if (!g || walking || photoIdx >= 0 || !locked || phoneUp) { guideEl.style.display = 'none'; return; }
+  const arw = guideEl.querySelector('.arw'), txt = guideEl.querySelector('.txt');
+  if (g.id === 'phone') {
+    const r = phoneEl.getBoundingClientRect();
+    guideEl.style.display = 'block';
+    guideEl.style.left = r.left + r.width * 0.5 + 'px';
+    guideEl.style.top = Math.max(60, r.top - 46) + 'px';
+    arw.textContent = '▼';
+    arw.style.transform = '';
+    txt.textContent = g.tip;
+    return;
+  }
+  const s = marks.find(m => m.userData.id === g.id);
+  if (!s) { guideEl.style.display = 'none'; return; }   // 不在这个房间，比如玩家走去了卧室
+  proj.copy(s.position).project(camera);
+  guideEl.style.display = 'block';
+  if (proj.z < 1 && Math.abs(proj.x) < 0.92 && Math.abs(proj.y) < 0.85) {
+    guideEl.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px';
+    guideEl.style.top = (-proj.y * 0.5 + 0.5) * innerHeight - 62 + 'px';
+    arw.textContent = '▼';
+    arw.style.transform = '';
+    txt.textContent = g.tip;
+    return;
+  }
+  // 目标在身后或者边缘外：换算到相机自己的坐标系（+x 右、+y 上、看向 -z），
+  // 分别求"水平要转多少"和"垂直要抬多少"，哪一边差得多就把箭头钉到那一侧。
+  // 以前这里把方向压平了（gDir.y = 0）只算左右，所以灌木丛那种在脚底下、
+  // 水平几乎没有偏差的目标，左右号只是噪声，永远被说成"往右转"。
+  // 用相机空间而不是世界空间的叉积，是为了跟屏幕方向严格一致——
+  // 全景球是从里面看的（BackSide），世界空间那套左右很容易正好反过来。
+  gDir.copy(s.position);
+  camera.worldToLocal(gDir);
+  const gLen = Math.max(1e-4, gDir.length());
+  const yaw = Math.atan2(gDir.x, -gDir.z);                              // 右为正，身后是 ±π
+  const pitch = Math.asin(THREE.MathUtils.clamp(gDir.y / gLen, -1, 1)); // 上为正
+  const vertMain = Math.abs(pitch) > Math.abs(yaw);
+  // 两个方向都偏得明显（超过 18 度）就都说，所以会有"往右下看"这种
+  const dir = [];
+  if (Math.abs(yaw) > 0.31) dir.push(yaw > 0 ? '右' : '左');
+  if (Math.abs(pitch) > 0.31) dir.push(pitch > 0 ? '上' : '下');
+  if (!dir.length) dir.push(vertMain ? (pitch > 0 ? '上' : '下') : (yaw > 0 ? '右' : '左'));
+  if (vertMain) {
+    guideEl.style.left = innerWidth * 0.5 + 'px';
+    guideEl.style.top = (pitch > 0 ? 96 : innerHeight - 96) + 'px';
+    arw.textContent = pitch > 0 ? '▲' : '▼';
+  } else {
+    guideEl.style.left = (yaw > 0 ? innerWidth - 74 : 74) + 'px';
+    guideEl.style.top = innerHeight * 0.5 + 'px';
+    arw.textContent = yaw > 0 ? '▶' : '◀';
+  }
+  arw.style.transform = 'none';
+  txt.textContent = '往' + dir.join('') + '看，找' + (g.what || g.tip.replace('点击', ''));
+}
+frame();
+</script>
+</body>
+</html>
