@@ -263,6 +263,22 @@
   #rotate.on{display:flex}
   #rotate b{display:block;font-size:40px;line-height:1;margin-bottom:20px;color:#c0392b}
   #rotate span{display:block;margin-top:12px;font-size:13px;color:#888;letter-spacing:0}
+  #rotate button{margin-top:26px;font:14px inherit;color:#ddd;background:#1c1c1e;
+                 border:1px solid #4a4a4e;border-radius:5px;padding:12px 20px;
+                 cursor:pointer;letter-spacing:.04em}
+  #rotate button:active{background:#2a1717;border-color:#c0392b}
+  /* 软件横屏：整个 body 转 90° 顶上去（宽高由 JS 按 px 写死，见 resize）。
+     body 上有 transform 之后，里面那些 position:fixed 的层会以 body 为容器块，
+     所以整套 UI 会跟着一起转，不用逐个改。
+     两个方向都留着：不同人横过来的手势不一样（有人右边朝上、有人左边朝上），
+     转反了点右下角那个"换一边"，见 #flip。 */
+  body.rot90{position:fixed;top:0;left:0;overflow:hidden;
+             transform-origin:0 0;transform:rotate(90deg) translate(0,-100%)}
+  body.rot90.ccw{transform:rotate(-90deg) translate(-100%,0)}
+  #flip{position:fixed;right:12px;bottom:12px;z-index:39;display:none;font:12px inherit;
+        color:#bbb;background:rgba(0,0,0,.62);border:1px solid #3a3a3a;border-radius:4px;
+        padding:9px 13px;cursor:pointer}
+  body.rot90 #flip{display:block}
   html.touch,html.touch body{touch-action:none;overscroll-behavior:none;
        -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   html.touch #app{cursor:default}
@@ -311,7 +327,8 @@
 
 
 </div>
-<div id="rotate"><b>⟳</b>把手机横过来<span>这一间屋子是宽的，竖着看只能看见一条缝</span></div>
+<div id="rotate"><b>⟳</b>把手机横过来<span>这一间屋子是宽的，竖着看只能看见一条缝</span><button id="force-land" type="button">转不过来？点这里强制横屏</button></div>
+<button id="flip" type="button">⟲ 方向反了，换一边</button>
 <div id="dark"></div>
 <div id="story"></div>
 <div id="pick"></div>
@@ -744,6 +761,19 @@ const endEl = document.getElementById('ending');
 // 那层"点击进入"点一下就永久收掉、以及竖屏时弹劝横屏的遮罩。
 const TOUCH = matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 0;
 const rotateEl = document.getElementById('rotate');
+// 软件横屏。手机开了方向锁（或者 iOS 根本不给锁方向的接口）时，
+// 屏幕转不过来，那就把整个 body 转过来：body 变成 高×宽 互换的一块，再 rotate(90deg)。
+// 代价是所有"屏幕坐标"都得换算——JS 里的 innerWidth/innerHeight 和 clientX/clientY
+// 说的还是没转之前那块物理屏。所以下面四个函数是唯一的入口，
+// 凡是拿屏幕宽高、拿手指坐标的地方一律走它们（rot90 关着时就是原样返回）。
+//   body 的变换是 transform-origin:0 0 + rotate(90deg) translate(0,-100%)，
+//   推出来的映射：物理(x,y) → 虚拟(y, innerWidth - x)，虚拟宽高 = (innerHeight, innerWidth)。
+let rot90 = false;
+let rotCCW = false;                 // 转反了就换成逆时针，映射也跟着换
+const vW = () => rot90 ? innerHeight : innerWidth;
+const vH = () => rot90 ? innerWidth : innerHeight;
+const vx = e => !rot90 ? e.clientX : (rotCCW ? innerHeight - e.clientY : e.clientY);
+const vy = e => !rot90 ? e.clientY : (rotCCW ? e.clientX : innerWidth - e.clientX);
 if (TOUCH) {
   document.documentElement.classList.add('touch');
   document.querySelector('#hud .tip').textContent =
@@ -1555,16 +1585,17 @@ let dragMoved = 0;
 app.addEventListener('pointerdown', e => {
   if (locked) return;
   dragging = true; dragMoved = 0;
-  px = e.clientX; py = e.clientY; app.classList.add('dragging');
+  px = vx(e); py = vy(e); app.classList.add('dragging');
 });
 addEventListener('pointerup', () => { dragging = false; app.classList.remove('dragging'); });
 addEventListener('pointermove', e => {
   if (!dragging || locked || pinchD) return;
   const k = fov / FOV_DEF * 0.0009;
-  dragMoved += Math.abs(e.clientX - px) + Math.abs(e.clientY - py);
-  viewU = wrap1(viewU - (e.clientX - px) * k);
-  viewV = THREE.MathUtils.clamp(viewV - (e.clientY - py) * k * 2, 0.02, 0.98);
-  px = e.clientX; py = e.clientY;
+  const x = vx(e), y = vy(e);
+  dragMoved += Math.abs(x - px) + Math.abs(y - py);
+  viewU = wrap1(viewU - (x - px) * k);
+  viewV = THREE.MathUtils.clamp(viewV - (y - py) * k * 2, 0.02, 0.98);
+  px = x; py = y;
 });
 // 双指捏合 = 桌面上的滚轮缩放，范围和上限完全一样（45~92，见 wheel 那段的说明）。
 // 捏合期间把单指拖动让开，不然两根手指会同时被算成一次环视。
@@ -1830,7 +1861,7 @@ const PH_BD = document.getElementById('phone-bd');
 const PH_O = [0.305, 1.0], PH_SCR = {l: .101, t: .019, w: .398, h: .557}, PH_TILT = -1.47;
 let zoomOn = false, zoomT = null;
 function zoomTransform() {
-  const W = innerWidth, H = innerHeight;
+  const W = vW(), H = vH();
   const bw = Math.min(430, W * 0.45), bh = bw * 1259 / 840;
   const left = W * 1.04 - bw, top = H * 1.08 - bh;
   const ox = left + PH_O[0] * bw, oy = top + PH_O[1] * bh;
@@ -1870,7 +1901,7 @@ let callOn = false;
 // 那通只是补背景，随时挂掉都不影响。
 let holdCall = false;
 function layoutCall() {
-  const W = innerWidth, H = innerHeight;
+  const W = vW(), H = vH();
   const bw = Math.min(430, W * 0.45), bh = bw * 1259 / 840;
   const z = zoomTransform();
   const w = PH_SCR.w * bw * z.k, h = PH_SCR.h * bh * z.k;
@@ -2074,7 +2105,7 @@ const PICK_RING = [[0, 0], [18, 0], [-18, 0], [0, 18], [0, -18],
 function pickScreen(x, y) {
   const ring = TOUCH ? PICK_RING : [[0, 0]];
   for (const [dx, dy] of ring) {
-    ndc.set((x + dx) / innerWidth * 2 - 1, -((y + dy) / innerHeight) * 2 + 1);
+    ndc.set((x + dx) / vW() * 2 - 1, -((y + dy) / vH()) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     const h = ray.intersectObjects(marks)[0];
     if (h) return h;
@@ -2099,7 +2130,7 @@ app.addEventListener('click', e => {
       ray.setFromCamera(ndc, camera);
       hit = ray.intersectObjects(marks)[0] || null;
     } else {
-      hit = pickScreen(e.clientX, e.clientY);
+      hit = pickScreen(vx(e), vy(e));
     }
   }
   // 没点到东西才算"快进到下一句"。举着手机 / 拨号界面那会儿点击另有含义
@@ -3357,12 +3388,56 @@ document.getElementById('cf-yes').onclick = () => { restartGame(); };
 
 
 function resize() {
-  camera.aspect = innerWidth / innerHeight;
-  renderer.setSize(innerWidth, innerHeight);
+  // 软件横屏开着的时候，body 被转了 90°，所以画布要按"换过来"的宽高做
+  if (rot90) {
+    // 尺寸用 px 写死（而不是 100dvh/100dvw）：这样它和 vx/vy 那套换算用的
+    // innerWidth/innerHeight 永远是同一个数，不会因为地址栏收放差几个像素
+    document.body.style.width = innerHeight + 'px';
+    document.body.style.height = innerWidth + 'px';
+    // 手机真的转成横屏了就不用再软件转了，否则会转两次
+    if (innerWidth > innerHeight) { setRot90(false); return; }
+  }
+  camera.aspect = vW() / vH();
+  renderer.setSize(vW(), vH());
   // 竖屏劝横屏。相机的垂直 fov 锁死 75，竖屏时水平视野只剩四十来度，
-  // 一间房子只能从一条缝里看——这不是布局能救的，所以直接盖一层让人转手机。
-  if (TOUCH) rotateEl.classList.toggle('on', innerHeight > innerWidth * 1.02);
+  // 一间房子只能从一条缝里看——这不是布局能救的，所以直接盖一层让人转手机
+  //（转不过来的可以点那层上的"强制横屏"，见 forceLandscape）。
+  if (TOUCH) rotateEl.classList.toggle('on', !rot90 && innerHeight > innerWidth * 1.02);
 }
+// "强制横屏"按钮。两条路：
+//   1. 安卓 Chrome：全屏 + Screen Orientation API 真的把方向锁成横屏，最干净；
+//   2. iOS Safari（screen.orientation.lock 不存在）或者锁失败：退回软件旋转。
+async function forceLandscape() {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+  } catch (e) { /* 用户拒绝全屏也没关系，下面还有一条路 */ }
+  try {
+    await screen.orientation?.lock?.('landscape');
+    rotateEl.classList.remove('on');
+    setTimeout(resize, 240);
+    return;
+  } catch (e) { /* iOS 或系统锁着：软件转 */ }
+  setRot90(true);
+}
+function setRot90(on) {
+  rot90 = on;
+  document.body.classList.toggle('rot90', on);
+  if (!on) { document.body.style.width = ''; document.body.style.height = ''; }
+  rotateEl.classList.remove('on');
+  resize();
+}
+document.getElementById('force-land').addEventListener('click', e => {
+  e.stopPropagation();
+  initAudio();
+  AC?.resume();
+  forceLandscape();
+});
+// 转反了：换成另一个方向（顺时针 ↔ 逆时针）。只有软件横屏时这个按钮才在。
+document.getElementById('flip').addEventListener('click', e => {
+  e.stopPropagation();
+  rotCCW = !rotCCW;
+  document.body.classList.toggle('ccw', rotCCW);
+});
 addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 260));
 visualViewport?.addEventListener('resize', resize);   // iOS 地址栏收起/展开也要重算
@@ -3434,8 +3509,8 @@ function frame() {
     const el = s.userData.el;
     el.style.display = visible ? 'block' : 'none';
     if (visible) {
-      el.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px';
-      el.style.top = (-proj.y * 0.5 + 0.5) * innerHeight + 'px';
+      el.style.left = (proj.x * 0.5 + 0.5) * vW() + 'px';
+      el.style.top = (-proj.y * 0.5 + 0.5) * vH() + 'px';
     }
   }
   drawGuide();
@@ -3466,8 +3541,8 @@ function drawGuide() {
   proj.copy(s.position).project(camera);
   guideEl.style.display = 'block';
   if (proj.z < 1 && Math.abs(proj.x) < 0.92 && Math.abs(proj.y) < 0.85) {
-    guideEl.style.left = (proj.x * 0.5 + 0.5) * innerWidth + 'px';
-    guideEl.style.top = (-proj.y * 0.5 + 0.5) * innerHeight - 62 + 'px';
+    guideEl.style.left = (proj.x * 0.5 + 0.5) * vW() + 'px';
+    guideEl.style.top = (-proj.y * 0.5 + 0.5) * vH() - 62 + 'px';
     arw.textContent = '▼';
     arw.style.transform = '';
     txt.textContent = g.tip;
@@ -3491,12 +3566,12 @@ function drawGuide() {
   if (Math.abs(pitch) > 0.31) dir.push(pitch > 0 ? '上' : '下');
   if (!dir.length) dir.push(vertMain ? (pitch > 0 ? '上' : '下') : (yaw > 0 ? '右' : '左'));
   if (vertMain) {
-    guideEl.style.left = innerWidth * 0.5 + 'px';
-    guideEl.style.top = (pitch > 0 ? 96 : innerHeight - 96) + 'px';
+    guideEl.style.left = vW() * 0.5 + 'px';
+    guideEl.style.top = (pitch > 0 ? 96 : vH() - 96) + 'px';
     arw.textContent = pitch > 0 ? '▲' : '▼';
   } else {
-    guideEl.style.left = (yaw > 0 ? innerWidth - 74 : 74) + 'px';
-    guideEl.style.top = innerHeight * 0.5 + 'px';
+    guideEl.style.left = (yaw > 0 ? vW() - 74 : 74) + 'px';
+    guideEl.style.top = vH() * 0.5 + 'px';
     arw.textContent = yaw > 0 ? '▶' : '◀';
   }
   arw.style.transform = 'none';
