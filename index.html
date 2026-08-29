@@ -2459,6 +2459,10 @@ const PLATE_DENT = ['images/wall-dent.jpg', '50% 50%'];
 const PLATE_DRILL = ['images/drill-wall.jpg', '50% 50%'];
 const PLATE_PEEP1 = ['images/peep-alone.jpg', '50% 50%'];
 const PLATE_PEEP2 = ['images/peep-two.jpg', '50% 50%'];
+// 第二次看进去的另一张，"现在就钻"那一支用（等水声那一支还是上面那张安静的）：
+// 洞里是他们两个在床上，他背对着洞、脸不出现，她面朝洞——而且在笑。
+// 分寸都写在生图提示词里（tools/gen_pano_outside.py 的 peep2bed）：被子盖到肩，不露隐私部位。
+const PLATE_PEEP2B = ['images/peep-two-bed.jpg', '50% 50%'];
 const PLATE_PEEPC = ['images/peep-claire.jpg', '50% 50%'];
 const PLATE_BOX = ['images/shoebox.jpg', '50% 50%'];
 // 第二章的死法：跟第一章那张 claire-underbed 是同一个机位、同一张倒过来的脸，
@@ -2744,7 +2748,7 @@ async function chapter2Start() {
   if (has('ch2')) return;
   mark('ch2');
   // 这一章的贴片到这时候才预加载：开局就压进去十张图没必要，走到这儿再拉
-  for (const [u] of [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2,
+  for (const [u] of [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
                      PLATE_PEEPC, PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]) {
     const im = new Image(); im.src = u;
   }
@@ -2888,7 +2892,28 @@ async function peepBeat(h) {
     return;
   }
   mark('peeped2');
-  await callScene([
+  // 第二次看进去，两支分岔（钻的时候选的那一下在这里才结账）：
+  //   等水声再钻 → 洞里两个人只是并肩坐着，什么都没做。这一种最难看，她自己也说了。
+  //   现在就钻   → 洞里是床上那一幕。他背对着洞，她正面朝洞，而且她在笑——
+  //               "她早就知道有这个洞"这件事提前到这里就抖出来，比原来那支更狠。
+  // 两支最后都收在同一处：她起身走过来，把洞堵住，那边贴上来一只眼睛。
+  const inBed = has('drillNow');
+  await callScene(inBed ? [
+    {t: '周一晚上，灯是开着的——床头那一盏，暖的。', d: 5.0,
+     f: () => showPlate(PLATE_PEEP2B)},
+    {t: '被子推到了一边。床上有两个人，在做什么不用看第二眼。', d: 7.4,
+     f: () => { S.dread += 4; }},
+    {t: '他背对着这个洞，低着头，肩膀在动。他不知道墙上有个洞——他从来不知道。', d: 8.6},
+    {t: '她的脸正对着你。', d: 4.2, f: () => blip('note')},
+    {t: '不是往窗户看，不是往门看。她的眼睛落在墙上，落在离地三十厘米的那一个点上。', d: 9.0},
+    {t: '她在笑。不是对他笑——她一直在看着这个洞，从什么时候开始的，你不知道。', d: 8.8,
+     f: () => { S.dread += 3; }},
+    {t: '她抬手在他背上拍了两下，像在说"够了"。然后她从床上下来了，'
+        + '脚步是往你这边来的。', d: 9.0},
+    {t: '洞里的光被挡住了。', d: 4.4,
+     f: () => { showPlate(PLATE_PEEPC); blip('sting'); S.dread += 6; }},
+    {t: '那边贴着洞的，是一只眼睛。她还在笑。', d: 8.0},
+  ] : [
     {t: '周一晚上，灯没有开。', d: 4.6, f: () => showPlate(PLATE_PEEP2)},
     {t: '窗户那边的天光是灰的。床沿上有两个人，背对着你，肩膀靠在一起。', d: 8.0,
      f: () => { S.dread += 4; }},
@@ -2926,7 +2951,7 @@ async function peepAfter() {
       {t: '你没有退。你也没有闭眼。', d: 4.6},
       {t: '你们隔着四毫米互相看着。她的睫毛动了一下，那只眼睛离得那么近，'
           + '你看得见她眼白上的血丝。', d: 9.0},
-      {t: '过了很久，她把身子撤开了。屋里那盏灯亮起来，她没有喊他，没有回头，'
+      {t: '过了很久，她把身子撤开了。洞里的光又回来了，她没有喊他，没有回头，'
           + '什么都没说。', d: 8.6, f: hidePlate},
       {t: '她只是知道了这件事，然后接着过她的日子。', d: 6.4,
        f: () => { S.dread += 5; }},
