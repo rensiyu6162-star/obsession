@@ -2528,6 +2528,9 @@ const PLATE_INVITEB = ['images/invite-back.jpg', '50% 50%'];
 const PLATE_CLAIRE2 = ['images/claire-underbed-2.jpg', '50% 50%'];
 // 内页豆腐块：失踪的房客，二十二岁，最后一次被看见是周日。没有照片，也没有名字。
 const PLATE_MISSING = ['images/news-missing.jpg', '50% 50%'];
+// 第二章动手那一下。跟第一章 claire-choke 是一对镜子：那一张第一视角是"她动手"，
+// 这一张是"她被动手"——机位躺在地板上往上看，Claire 一手掐着镜头这边的脖子、一手举着刀。
+const PLATE_KNIFE = ['images/claire-knife.jpg', '50% 50%'];
 // 贴片预热。以前是模块加载时一口气 new Image() 十五张——在慢网上这十五张会跟
 // 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成一张一张排队，
 // 而且等到玩家点了"进入"之后才开始（那时候第一张全景已经在解码了）。
@@ -2551,7 +2554,7 @@ const PRELOAD_CH1 = [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
 // 提出来当常量，点"进入"那一下按章节挑一摞（见 enterEl 那个 handler）。
 const PRELOAD_CH2 = [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
                      PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
-                     PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING];
+                     PLATE_BOX, PLATE_CLAIRE2, PLATE_KNIFE, PLATE_MISSING];
 
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
@@ -3202,13 +3205,17 @@ async function ch2DeathBeat() {
      f: () => { showPlate(PLATE_CLAIRE2); blip('sting'); S.dread += 8; }},
     {t: '她没有叫。她一点都不意外。', d: 6.0},
     {t: '她笑了——嘴角很小地往上抬了一下，像终于对上了一件早就摆好的东西。', d: 8.6},
-    {who: 'Claire', t: '「你来了。」', d: 4.4},
-    {who: 'Claire', t: '「我给你留了位置。」', d: 5.0},
-    // 杀的理由只有这一句：她不是灭口，她是收尾。他从前女友那儿带过来的东西，
-    // 她一样一样收好了，最后一样是那个人本身。
-    {who: 'Claire', t: '「他从你那儿带过来的东西，我一样一样都收好了。」', d: 6.4},
-    {who: 'Claire', t: '「就剩你了。」', d: 4.6, f: () => { S.dread += 4; }},
-    {t: '她的手伸进来了。你没有往后躲——你已经在最里面了。', d: 7.6},
+    // 这四句是用户定稿的，一句就是一句，不许再拆成短句：动机全在这四句里
+    // （她跟踪的不是他，是"他的过去"；杀人不是灭口，是把那个位置腾出来）。
+    {who: 'Claire', t: '「你终于来了，我给你留了位置。」', d: 6.0},
+    {who: 'Claire', t: '「你以为只有你在跟踪他吗？你盯着他的一举一动，而我，一直在盯着你。」',
+     d: 11.0, f: () => { S.dread += 4; }},
+    {who: 'Claire', t: '「我努力接纳他的全部，可唯独接纳不了你的存在。」', d: 8.6},
+    {who: 'Claire', t: '「只要你还活着，他的过去就永远有你的位置。'
+        + '我得不到全部的他，那我只能，除掉你。」', d: 13.0,
+     f: () => { S.dread += 4; }},
+    {t: '她的手伸进来了。你没有往后躲——你已经在最里面了。', d: 7.6,
+     f: () => { showPlate(PLATE_KNIFE); blip('sting'); S.dread += 6; }},
   ]);
   await sleep(1600);
   hidePlate();
