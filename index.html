@@ -927,6 +927,13 @@ function applyAudioProfile() {                      // 每个房间的声音底�
   // 隔着一条街还能听见客厅那盘磁带是说不通的。
   const inFlat = node === 'living' || node === 'bedroom' || node === 'corridor';
   if (tvGain && tvSrc) ramp(tvGain.gain, node === 'living' ? 0.55 : inFlat ? 0.16 : 0, 1.0);
+  // 兜底：床震和那段喘息只属于床底下和隔壁那面墙（第二章从洞里听见的）。
+  // 别的房间里还在震，一定是哪一次没收干净（见 loopSfx 的 LOOP_SEQ 那段注释），
+  // 这里无条件收掉——这个函数在换房间、开关灯、举放手机的时候都会跑到。
+  if (node !== 'underbed' && node !== 'ndbed') {
+    shakeTarget = 0;
+    if (LOOPS.breath) loopSfx('breath', false);
+  }
 }
 
 function noiseBurst(dur, freq, q, peak, type = 'bandpass') {
@@ -1035,15 +1042,23 @@ function stopVox(fade = 0.18) {
 // 几乎瞬切，不然听不出"突然变响"），opt.onStart 是给"必须和出声那一刻对齐"的东西用的
 //（床震的相位就挂在这儿）。
 const LOOPS = {};
+// 每次开/停都 +1。loopSfx 里那个 await（fetch + decodeAudioData）在慢网上能拖好几秒，
+// 期间剧情很可能已经走过"收声"那一句了：那时 LOOPS 里还没有东西，停不掉，
+// 等解码回来循环才起——然后就一直响下去。所以拿这个序号判断"我这一次还算不算数"。
+// 床底那段的喘息 + 床震就是这么卡住的：喘息在剧情结束之后才起，shakeTarget 跟着被设回
+// 有幅度的值，于是房间一直在隆隆地震。
+const LOOP_SEQ = {};
 async function loopSfx(name, on, opt = {}) {
-  if (!AC) return;
+  if (!AC) return false;
   const fade = opt.fade ?? 1.2;
+  const seq = (LOOP_SEQ[name] = (LOOP_SEQ[name] || 0) + 1);
   if (on) {
-    if (LOOPS[name]) return;
+    if (LOOPS[name]) return true;
     makeVoxChains();
     const buf = await voxLoad(name);
-    if (!buf) return;
-    if (LOOPS[name]) return;                   // 解码这段时间里可能已经被别处起过了
+    if (!buf) return false;
+    if (seq !== LOOP_SEQ[name]) return false;   // 这期间有人喊过停：这一次作废
+    if (LOOPS[name]) return true;               // 解码这段时间里可能已经被别处起过了
     const g = AC.createGain();
     g.gain.value = 0.0001;
     g.connect(voxRoomIn);
@@ -1053,15 +1068,17 @@ async function loopSfx(name, on, opt = {}) {
     g.gain.linearRampToValueAtTime(opt.vol ?? 1, AC.currentTime + fade);
     LOOPS[name] = {s, g};
     opt.onStart?.();
+    return true;
   } else {
     const L = LOOPS[name];
-    if (!L) return;
+    if (!L) return false;
     delete LOOPS[name];
     L.g.gain.cancelScheduledValues(AC.currentTime);
     L.g.gain.setValueAtTime(L.g.gain.value, AC.currentTime);
     L.g.gain.linearRampToValueAtTime(0.0001, AC.currentTime + fade);
     setTimeout(() => { try { L.s.stop(); } catch (e) {} L.g.disconnect(); },
                fade * 1000 + 200);
+    return false;
   }
 }
 // 床震必须等喘息真的出声了才起——loopSfx 里有 fetch + decodeAudioData，
@@ -1069,10 +1086,10 @@ async function loopSfx(name, on, opt = {}) {
 // 相位和幅度都在 onStart（也就是 source.start() 那一刻）归零。
 // 另外进床底之前就把这两段预解码好（见 duckUnderBed），正常情况下这里几乎不等。
 async function startBedShake(amp) {
-  await loopSfx('breath', true, {
+  const started = await loopSfx('breath', true, {
     onStart: () => { shakeT0 = performance.now(); shakeAmp = 0; },
   });
-  shakeTarget = amp;
+  if (started) shakeTarget = amp;      // 喘息没起来（被叫停或解码失败）就别让床自己震
 }
 // 警笛。由远及近不是把音量拉大就完了——远处的声音是"闷 + 小 + 干"，
 // 近处才是"亮 + 大 + 有回声"。所以这里自己搭一条链：低通 + 音量一起走。
