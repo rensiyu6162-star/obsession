@@ -2100,6 +2100,9 @@ function syncPhone() {
   if (on === phoneShown) return;           // 每帧都写 DOM 没必要，只在翻转时写
   phoneShown = on;
   phoneEl.style.visibility = on ? 'visible' : 'hidden';
+  // 百度浏览器会在 video 预热完成后提前绘制首帧，即使父层是 visibility:hidden
+  // 也可能短暂露出来。未出现时彻底从渲染树移除；真正需要举手机时再恢复。
+  phoneEl.style.display = on ? '' : 'none';
 }
 syncPhone();                               // 别等第一帧，否则开局会闪一下那只手
 // 手机的声音走 Web Audio：高通 190 / 低通 6.2k，做成一只手机小喇叭的音色，
