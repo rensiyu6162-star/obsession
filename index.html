@@ -2837,6 +2837,11 @@ async function crawlOutBeat() {
     {t: '你伸手把被子拉平了。你不知道自己为什么要拉平它。', d: 6.8,
      f: () => { S.dread += 2; }},
   ]);
+  // 箭头交给楼梯口。jumpTo 里那次 applyGuide 是在 mark('outOfBed') 之前跑的，
+  // 那会儿 guideFor('hisbed') 还走"已经在床底下了"那一支、返回空数组——
+  // 所以这一段结束之后必须再指一次，不然人爬出来站在空屋子里没有任何下一步。
+  applyGuide();
+  buildSpots(node);
   save();
 }
 // 这条支线的最后一拍：街上、路灯下、隔壁那户窗玻璃里贴着的一张"待租"。
