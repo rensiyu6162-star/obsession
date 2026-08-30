@@ -2805,6 +2805,7 @@ async function chapter2Start() {
     const im = new Image(); im.src = u;
   }
   voxLoad('drill');
+  voxLoad('breath');            // "现在就钻"那一支偷看时要用，先解码好
   sceneId++;
   hidePlate();
   walking = true;
@@ -2958,15 +2959,19 @@ async function peepBeat(h) {
   await callScene(inBed ? [
     {t: '周一晚上，灯是开着的——床头那一盏，暖的。', d: 5.0,
      f: () => showPlate(PLATE_PEEP2B)},
+    // 喘息是实录（audio/breath.mp3，跟床底那一段同一段素材）。这里隔着一堵墙和一个
+    // 四毫米的孔，所以音量压到 0.4、淡入给 2 秒——听得出是什么，但要贴着洞才听得清。
     {t: '被子推到了一边。床上有两个人，在做什么不用看第二眼。', d: 7.4,
-     f: () => { S.dread += 4; }},
+     f: () => { S.dread += 4; loopSfx('breath', true, {fade: 2.0, vol: 0.4}); }},
     {t: '他背对着这个洞，低着头，肩膀在动。他不知道墙上有个洞——他从来不知道。', d: 8.6},
     {t: '她的脸正对着你。', d: 4.2, f: () => blip('note')},
     {t: '不是往窗户看，不是往门看。她的眼睛落在墙上，落在离地三十厘米的那一个点上。', d: 9.0},
     {t: '她在笑。不是对他笑——她一直在看着这个洞，从什么时候开始的，你不知道。', d: 8.8,
      f: () => { S.dread += 3; }},
+    // "够了"这一下声音就收——之后是脚步声往洞这边来，那一段要干净
     {t: '她抬手在他背上拍了两下，像在说"够了"。然后她从床上下来了，'
-        + '脚步是往你这边来的。', d: 9.0},
+        + '脚步是往你这边来的。', d: 9.0,
+     f: () => loopSfx('breath', false, {fade: 1.4})},
     {t: '洞里的光被挡住了。', d: 4.4,
      f: () => { showPlate(PLATE_PEEPC); blip('sting'); S.dread += 6; }},
     {t: '那边贴着洞的，是一只眼睛。她还在笑。', d: 8.0},
@@ -2984,6 +2989,8 @@ async function peepBeat(h) {
      f: () => { showPlate(PLATE_PEEPC); blip('sting'); S.dread += 6; }},
     {t: '那边贴着洞的，是一只眼睛。她在笑。', d: 8.0},
   ]);
+  // 这一段被跳过/被下一段顶掉时，喘息不能留在那儿一直循环
+  loopSfx('breath', false, {fade: 0.8});
   peepRunning = false;
   await peepAfter();
 }
