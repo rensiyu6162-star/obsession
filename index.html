@@ -3444,6 +3444,41 @@ setInterval(() => {
   stuckSaid = true;
   say('（这一拍没有能点的东西了。要是一直停在这儿，可以在右上角的设置里重新开始。）', 6000);
 }, 2000);
+// 手机浏览器切到后台时会冻结 setTimeout、视频和 Web Audio；回来时原来的 Promise
+// 可能已经停在半路，但 sceneBusy/旧字幕不会替玩家把热点重新建出来。
+// 回前台统一结束失效演出，再按当前 flags 接回剧情，并重建箭头和热点。
+let wasHidden = false;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    wasHidden = true;
+    save();                                    // 把离开后台前的最新剧情状态留下
+    return;
+  }
+  if (!wasHidden) return;
+  wasHidden = false;
+  sceneId++;                                   // 让后台被冻结的 callScene 安静收尾
+  clearTimeout(storyEl._t);
+  storyEl.classList.remove('on');
+  pickEl.classList.remove('on');
+  pickEl.innerHTML = '';
+  setPhone(false);
+  if (!walking) {
+    // 下一帧再操作 DOM，等 iOS 从后台恢复布局和 WebGL 上下文。
+    setTimeout(() => {
+      if (document.hidden) return;
+      resumeFix();
+      applyGuide();
+      buildSpots(node);
+      applyAudioProfile();
+      save();
+    }, 180);
+  } else {
+    // 后台冻结时正在过门，取消半截过渡并回到当前已保存房间。
+    walking = false;
+    walkTo = '';
+    setTimeout(() => { if (!document.hidden) { applyGuide(); buildSpots(node); save(); } }, 180);
+  }
+});
 // 周二那一趟不再自动传送了：她自己下楼、开自己家的门、走三步、推他家那道门。
 // 原来是一段旁白播完直接淡入他家客厅——省了两次点击，代价是第一视角断掉，
 // 而且"进他家"这件事变成了旁白替她做的。现在门口那两句留在热点自己的 text 上
