@@ -538,6 +538,14 @@ const NODES = {
     // "手机没掏出来"那一支：她从他家走出来的那一下。这里只交代"外面已经黑了"，
     // 出租启事那张纸留给玩家自己转头发现（热点 tolet）。
     onArrive: () => {
+      // 第二章周二：她从自己家门口出来，走的是隔壁那一扇。两扇门只差三步，
+      // 这一句就是这一趟唯一需要说的话——剩下的交给门自己（hisdoor2 的 text）。
+      if (has('ch2Back') && !has('ch2Street')) {
+        mark('ch2Street');
+        setTimeout(() => say('台阶下去三步就是他家那道门。你在自己门口站了一会儿，'
+                           + '口袋里那张照片硬硬的一块。', 8000), 900);
+        return;
+      }
       if (!has('outOfBed') || has('sawToLet')) return;
       setTimeout(() => say('外面已经黑了。你把门轻轻带上，走下台阶。整条街上一个人都没有。',
                            6400), 900);
@@ -585,6 +593,14 @@ const NODES = {
     pano: 'images/pano-hishouse-v2.png',
     off: 0,
     rain: 0, wind: 0, drone: 0.06,
+    // 第二章周二那一趟进门：这两句以前是自动传送之后播的，现在挪到真的走进来之后。
+    // 第一次进这栋房子（第一章）不说话——那时候进门那句挂在门自己身上。
+    onArrive: () => {
+      if (!has('ch2Back') || has('ch2InHouse')) return;
+      mark('ch2InHouse');
+      setTimeout(() => say('屋里的灯还开着，她走的时候没关。你不是来看那张床的——'
+                         + '你是来弄清那张照片是从哪儿来的。', 8400), 900);
+    },
     spots: [
       {u:0.024, v:0.482, label:'门', id:'hisfront',
        text:'门在你背后合上了。你没有锁——你不打算待到他回来。'},
@@ -737,18 +753,9 @@ const END_BEDSIDE = {
       + '包括地板上那个人，她来得比你晚，走得比你早。'
       + '你终于又睡在这张床上了。这一次，半夜不会再有人回来。',
 };
-// 另一条路的收尾：手机没掏出来，谁都没发现她，她自己走出了那栋房子。
-// 这张卡不收口，是个入口——出租启事、隔着一堵墙的隔壁、下一章要钻的那个洞。
-const END_TOLET = {
-  id: 'tolet',
-  title: '隔 一 堵 墙',
-  text: '你什么都没做。你听着他们，听着他走，听着她走，然后自己从那张床底下爬了出来，'
-      + '把被子拉平，关上他家的门。街上没有人看见你。'
-      + '走到人行道上你才发现隔壁那户的窗玻璃里贴了一张纸：待租。'
-      + '你站在那儿把电话号码看了很久，久到路灯下的字都记住了。'
-      + '他家和那户中间只隔着一堵墙。你想知道那堵墙有多厚。',
-  next: () => chapter2Start(),
-};
+// 第一章到第二章之间不再有卡片。以前这儿有一张「隔 一 堵 墙」，用的是结局卡那套版式
+//（红色分字标题 + 一段总结 + 继续按钮），玩家看见就以为通关了。现在改成直接往下接：
+// 她当场打了那个电话，画面从路灯底下淡进她自己租下的那间空客厅（见 toLetBeat 末尾）。
 // 第二章的收口。这一张才是真的终局：她终于知道了自己在这件事里是什么位置——
 // 不是看的人，是被看的那一个，而且已经被看了四十七次。
 const END_47 = {
@@ -1605,6 +1612,7 @@ const showEnter = () => {
 enterEl.addEventListener('click', () => {
   initAudio();
   AC?.resume();
+  resumeStuck();                                     // 读档落在演出中间：补跑那一段
   if (TOUCH) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
 });
@@ -1820,30 +1828,29 @@ function guideDone(id) {
 // tip 是目标在视野里时显示的那句（祈使句）；what 是目标不在视野里时"往…看，找 X"里的
 // 那个 X。tip 形如"点击某物"的可以省掉 what，掐掉"点击"两个字正好就是名词。
 function guideFor(n) {
-  // 第二章 · 隔壁：她自己租的那一户，路线是 楼下 → 楼上 → 那面墙 → 凹坑 → 洞
-  // 楼下这一层只要那个洞还没看完就一直指楼上（从街上回来、从楼上下来都算），
-  // 看完了就撤——那之后楼下没有任何该做的事。
-  if (n === 'ndliving') return has('peeped2') ? [] : [{id: 'ndup', tip: '上楼', what: '楼梯'}];
-  if (n === 'ndbed') {
-    if (!has('sawDent')) return [{id: 'ndwall', tip: '点击那面墙', what: '那面空墙'}];
-    if (!has('holeOpen')) return [{id: 'nddent', tip: '拿电钻钻开它', what: '墙脚那个凹坑'}];
-    if (!has('peeped2')) return [{id: 'ndhole', tip: '凑上去看', what: '墙上那个洞'}];
-    return [];
-  }
-  // 第二章里跑到街上去了：周二之前指回自己家那道门（他家这时候进不去），
-  // 周二之后指他家那道门（下面 ch2Back 那一段管）。
-  if (has('ch2') && !has('ch2Back') && n === 'outside') {
-    return [{id: 'ndhome', tip: '回自己家', what: '你自己那道门'}];
-  }
-  // 第二章后半：周二又回到他家。这一段要压在 outOfBed 那一支前面，
-  // 不然 hisbed 会被指去"下楼"（那是第一章那条支线的收尾）。
-  if (has('ch2Back')) {
-    if (n === 'outside') return [{id: 'hisdoor2', tip: '点击那扇门'}];
+  // ——— 第二章 · 隔壁 ———
+  // 这一章从搬进来到钻回他床底是一条线，中间没有任何岔路，所以指引也写成一条线：
+  //   楼上 → 那面墙 → 凹坑 → 洞①② → 洞口那张照片 → 〔周二〕下楼 → 出门 →
+  //   他家那道门 → 上楼 → 床底
+  // 全部集中在这一个 if 里（以前是散在四五处、靠书写顺序互相压），
+  // 好处是任何一个房间、任何一个 flag 组合下都一定有箭头：走到哪儿都不会没人指路。
+  // ch2Under 之后不再管——那之后是鞋盒和结局，全是演出，玩家没有可点的东西。
+  if (has('ch2') && !has('ch2Under')) {
+    const back = has('ch2Back');              // 周二：该回他家了
+    if (n === 'ndliving') return back
+      ? [{id: 'nddoor1', tip: '出门', what: '你自己家那道门'}]
+      : [{id: 'ndup', tip: '上楼', what: '楼梯'}];
+    if (n === 'ndbed') {
+      if (!has('sawDent')) return [{id: 'ndwall', tip: '点击那面墙', what: '那面空墙'}];
+      if (!has('holeOpen')) return [{id: 'nddent', tip: '拿电钻钻开它', what: '墙脚那个凹坑'}];
+      if (!has('peeped2') || !has('invited')) return [{id: 'ndhole', tip: '凑上去看', what: '墙上那个洞'}];
+      return back ? [{id: 'nddown', tip: '下楼', what: '楼梯口'}] : [];
+    }
+    if (n === 'outside') return back
+      ? [{id: 'hisdoor2', tip: '进他家', what: '他家那道门'}]
+      : [{id: 'ndhome', tip: '回自己家', what: '你自己那道门'}];
     if (n === 'hishouse') return [{id: 'hisstairs', tip: '上楼', what: '楼梯'}];
-    if (n === 'hisbed') return has('ch2Under')
-      ? []
-      : [{id: 'underbed2', tip: '钻到床底下', what: '床底那道缝'}];
-    if (n === 'underbed') return [];
+    if (n === 'hisbed') return [{id: 'underbed2', tip: '钻到床底下', what: '床底那道缝'}];
   }
   // "手机没掏出来"那条支线：从床底爬出来之后，路线是 卧室 → 楼下 → 出门 → 邻居家的窗户
   if (has('outOfBed')) {
@@ -1856,7 +1863,11 @@ function guideFor(n) {
   if (n === 'outside') return has('heLeft')
     ? [{id: 'hisdoor2', tip: '点击那扇门'}]
     : [{id: 'hedge', tip: '躲进灌木丛', what: '脚边的灌木丛'}];
-  if (n === 'hishouse') return [{id: 'hisstairs', tip: '上楼', what: '楼梯'}];
+  // 头一回进他家：先指架子上那排相框（里面没有一张是你），看完了（sawCouple）
+  // 才把箭头交给楼梯。第二章回来那一次不走这儿（上面 ch2Back 那一支已经拦掉了）。
+  if (n === 'hishouse') return has('sawCouple')
+    ? [{id: 'hisstairs', tip: '上楼', what: '楼梯'}]
+    : [{id: 'hisphotos', tip: '点击相框', what: '架子上那排相框'}];
   if (n === 'hisbed') {
     if (has('hidUnder')) return [];                  // 已经在床底下了，别再指床
     if (has('coupleHome')) return [{id: 'underbed', tip: '钻到床底下', what: '床底那道缝'}];
@@ -2306,6 +2317,7 @@ app.addEventListener('click', e => {
     // 不然反复点就能把 dread 刷上去。
     const first = !has('sawCouple');
     mark('sawCouple');
+    applyGuide();                                 // 箭头从"相框"换成"上楼"
     if (h.id && !S.seen[h.id]) { S.seen[h.id] = true; S.dread += h.dread || 0; }
     blip('note');
     callScene([
@@ -2767,16 +2779,23 @@ async function toLetBeat(h) {
     {d: 1.8, f: hidePlate},
   ]);
   save();
-  await sleep(1200);
-  showEnding(END_TOLET);
+  // 不再弹卡片（见上面 END_TOLET 那段注释）。第一章和第二章之间只隔一个电话和一次淡入。
+  await callScene([
+    {t: '久到那串数字你闭着眼也念得出来。然后你把它按进了手机里。', d: 7.8},
+    {t: '响了两声就通了。你听见自己开口问：那一户，还租得出去吗。', d: 7.6,
+     f: () => blip('note')},
+  ]);
+  await sleep(700);
+  await chapter2Start();
 }
 // ======================= 第二章 · 隔壁 =======================
 // 第一章她是"跟过去"，第二章她是"住下来"——这一章所有的事都发生在她自己家里，
 // 隔着一堵墙。她这次不是闯进别人的房子，她是合法的房客，有钥匙，有房租，
 // 墙是她那一侧的墙，洞是她自己钻的。这比第一章更难受，因为一样都不违法。
 // 结构：搬进来 → 墙脚那个凹坑 → 电钻打通（二选一）→ 偷看①他一个人 →
-//       偷看②两个人 → Claire 回头看那个洞 → 周二回他家钻回床底 →
-//       鞋盒（四十七张照片全是她自己）→ 倒过来那张脸，这次是笑着的。
+//       偷看②两个人 → Claire 回头看那个洞 → 洞里塞进来一张她自己的照片（邀请）→
+//       周二自己下楼出门、走三步推开他家那道门 → 上楼 → 钻回床底 →
+//       鞋盒（四十七张照片全是她自己，第四十八张是口袋里那张）→ 倒过来那张脸，这次是笑着的。
 async function chapter2Start() {
   if (has('ch2')) return;
   mark('ch2');
@@ -2901,8 +2920,13 @@ let drillRunning = false;
 let peepRunning = false;
 async function peepBeat(h) {
   if (peepRunning) return;
-  // 看过两次之后这个洞就不再演了，但还得给一句回应——热点还在那儿，点了不能没反应
-  if (has('peeped2')) { say('洞还在那儿。那边现在是黑的。', 3200); return; }
+  // 看过两次之后这个洞就不再演了，但还得给一句回应——热点还在那儿，点了不能没反应。
+  // 例外：看完了、但那张照片还没落下来（在这中间刷新过），那就把那一拍补上——
+  // 这时候箭头正指着这个洞，点了只回一句"那边是黑的"就等于把人扔在这儿了。
+  if (has('peeped2')) {
+    if (!has('invited')) { peepRunning = true; await ch2InviteBeat(); peepRunning = false; return; }
+    say('洞还在那儿。那边现在是黑的。', 3200); return;
+  }
   if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
   peepRunning = true;
   if (!has('peeped1')) {
@@ -2992,33 +3016,52 @@ async function peepAfter() {
   }
   save();
   await sleep(1600);
-  await ch2BackBeat();
+  await ch2InviteBeat();
 }
-// 周二。他们都出门了——这一段不给玩家选择，因为她已经不问自己要不要去了。
-// 场景直接落到他家客厅：门还是没锁，钥匙这件事她从来不需要。
-async function ch2BackBeat() {
-  if (has('ch2Back')) return;
-  mark('ch2Back');
+// 周一那一夜之后：Claire 从她那一侧往洞里塞进来一张照片。
+// 这一拍是第二章的转轴。原来这儿是"你想再看一眼那张床"——那句撑不住，
+// 刚被一只眼睛盯着笑过的人不会因为想念一张床就再进去一次。她是被叫进去的。
+// 照片上那三个细节（冲印的白框、蓝色圆珠笔、字写得很轻）跟后面鞋盒里那四十七张是同一套：
+// 玩家掀开鞋盒那一下才会认出来，手里这张是从那一摞里抽出来的。
+async function ch2InviteBeat() {
+  if (has('invited')) return;
   await callScene([
-    {t: '周二下午，他家的门响了两次：他先走的，她后走的。她走的时候在门口回头看了一眼隔壁。', d: 9.4},
-    {t: '看的是你的窗。你在窗帘后面站着，没有动。', d: 6.6},
-    {t: '门声散了以后，整排房子都很静。', d: 5.6},
-  ]);
-  walking = true;
-  await fadePano(NODES.hishouse.pano, 2000);
-  jumpTo('hishouse', 0.024);
-  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
-  fades.length = 0;
-  walking = false;
-  await sleep(800);
-  await callScene([
-    {t: '门还是没锁。这栋房子里只有这一件事是不变的。', d: 6.8},
-    {t: '你想再看一眼那张床。就一眼——你自己也是这么跟自己说的。', d: 7.2},
+    {t: '那一夜你没有睡。你把睡袋拖到墙根，脸朝着那个洞，等光再变一次。', d: 8.0},
+    {t: '光没有再变。天快亮的时候，洞里落出来一样东西，掉在你的手背上。', d: 8.0,
+     f: () => blip('note')},
+    {t: '是一张照片。冲印出来的那种，边上带白框，边角有点卷。', d: 7.0},
+    {t: '照片上是你。站台，从背后拍的，你正低着头看手机。你不记得这一天。', d: 8.6,
+     f: () => { S.dread += 5; }},
+    {t: '背面有一行蓝色圆珠笔，字写得很轻：', d: 5.6},
+    {t: '「这样看不清。你该进来看。」', d: 6.4, f: () => blip('sting')},
+    {t: '你把它翻过来又翻过去，翻了很多遍。你没有把它塞回洞里。', d: 7.6},
+    {t: '周二下午，他家的门响了两次：他先走的，她后走的。', d: 7.0},
+    {t: '她走的时候在门口回头看了一眼隔壁——看的是你的窗。你在窗帘后面站着，没有动。', d: 9.2},
+    {t: '门声散了以后，整排房子都很静。', d: 5.4},
+    {t: '你把那张照片放进口袋。', d: 5.0,
+     f: () => { mark('invited'); mark('ch2Back'); S.dread += 2; }},
   ]);
   applyGuide();
   buildSpots(node);
   save();
 }
+// 床底和洞口这几处是"没有任何可点的东西、全靠演出往下走"的地方。
+// 在这中间刷新页面，热点是空的、箭头也是空的，人就真的卡住了——这才是最像无头苍蝇的
+// 一种情况。所以点"进入"那一下补跑一次没做完的那一拍。只跑一次（resumed）。
+let resumed = false;
+function resumeStuck() {
+  if (resumed) return;
+  resumed = true;
+  if (node === 'underbed') {
+    if (has('ch2Under') && !has('sawBox')) { shoeboxBeat(); return; }
+    if (!has('sawThem')) { underBedBeat(); return; }
+  }
+  if (node === 'ndbed' && has('peeped2') && !has('invited')) ch2InviteBeat();
+}
+// 周二那一趟不再自动传送了：她自己下楼、开自己家的门、走三步、推他家那道门。
+// 原来是一段旁白播完直接淡入他家客厅——省了两次点击，代价是第一视角断掉，
+// 而且"进他家"这件事变成了旁白替她做的。现在门口那两句留在热点自己的 text 上
+//（outside 的 hisdoor2、hishouse 的 onArrive），旁白不再重复说一遍"门还是没锁"。
 // 第二次钻进同一道缝。动作跟 duckUnderBed 一模一样，台词全是回收——
 // 第一次是"她被迫躲"，这一次她是自己趴下去的，而且熟得不用摸。
 let ch2DuckRunning = false;
@@ -3071,6 +3114,12 @@ async function shoeboxBeat() {
         + '在你自己的床上，脸埋在枕头里。', d: 9.6},
     {t: '你一张一张数。四十七张。四十七张里没有一张是他们两个。', d: 8.4,
      f: () => { S.dread += 6; }},
+    // 动机在这儿落地：她拍的不是情敌，是标尺。最早那一张早到"他还没跟她在一起"，
+    // 也就是说，她是从知道"他之前有过一个人"那天起就开始存的。
+    {t: '最底下那张的白框上写着日期。三个月前——他搬进这栋房子那一周，'
+        + '也就是你被他关在门外的第二天。', d: 9.8},
+    {t: '你把口袋里那张摸出来，摞上去。边上的白框一模一样，圆珠笔是同一支。'
+        + '第四十八张。', d: 9.0, f: () => { S.dread += 4; }},
     {t: '最上面那张压着一小片横格纸，蓝色圆珠笔，字写得很轻：', d: 7.0},
     {t: '「她还会来的。」', d: 6.0, f: () => blip('sting')},
     {t: '楼下那道门开了。', d: 4.6, f: () => { hidePlate(); blip('step'); }},
@@ -3094,6 +3143,10 @@ async function ch2DeathBeat() {
     {t: '她笑了——嘴角很小地往上抬了一下，像终于对上了一件早就摆好的东西。', d: 8.6},
     {who: 'Claire', t: '「你来了。」', d: 4.4},
     {who: 'Claire', t: '「我给你留了位置。」', d: 5.0},
+    // 杀的理由只有这一句：她不是灭口，她是收尾。他从前女友那儿带过来的东西，
+    // 她一样一样收好了，最后一样是那个人本身。
+    {who: 'Claire', t: '「他从你那儿带过来的东西，我一样一样都收好了。」', d: 6.4},
+    {who: 'Claire', t: '「就剩你了。」', d: 4.6, f: () => { S.dread += 4; }},
     {t: '她的手伸进来了。你没有往后躲——你已经在最里面了。', d: 7.6},
   ]);
   await sleep(1600);
