@@ -116,6 +116,15 @@
   #enter.back{z-index:9;background:rgba(0,0,0,.5);font-size:15px}
   /* 第一间屋子的全景图还在下载/解码：这层先不接受点击，免得点进去看见一片黑 */
   #enter.wait{cursor:progress;color:#8b8b90}
+  /* 首屏进度条。按真实下载字节走（见 gateLoad），不是假动画 */
+  #load{position:fixed;left:50%;bottom:24%;transform:translateX(-50%);z-index:31;
+        width:min(340px,62%);display:none;text-align:center}
+  #load.on{display:block}
+  #load .bar{height:3px;background:rgba(255,255,255,.14);border-radius:2px;overflow:hidden}
+  #load .bar i{display:block;height:100%;width:0;background:#c0392b;
+               transition:width .3s linear}
+  #load em{display:block;margin-top:9px;font-size:11px;font-style:normal;color:#83838a;
+           letter-spacing:.08em;font-family:ui-monospace,Consolas,monospace}
   /* 开门那一下的过曝：白天的光从门缝里灌进来，顺便盖住"房间壳换成视频"这个切换 */
   #flash{position:fixed;inset:0;z-index:37;pointer-events:none;background:#f2efe9;
          opacity:0;transition:opacity 1.4s ease-in}
@@ -383,7 +392,7 @@
   <div class="rig">
     <img class="hand" src="images/phone-hand.png" alt="">
     <div class="scr">
-      <video class="vid" src="images/phone-vid.mp4" playsinline preload="auto"></video>
+      <video class="vid" src="images/phone-vid.mp4" playsinline preload="none"></video>
       <div class="glass"></div>
     </div>
     <img class="handfront" src="images/phone-hand-front.png" alt="">
@@ -398,6 +407,7 @@
   <div class="hangup"></div>
 </div>
 <div id="enter">点击进入<span>WASD / 方向键走动 · 鼠标环视 · 准星对准后点击交互 · Esc 退出</span></div>
+<div id="load"><div class="bar"><i></i></div><em></em></div>
 <button id="settings">设置</button>
 <div id="panel">
   <div class="box">
@@ -1215,6 +1225,10 @@ async function loadSong(urls) {
   console.log('audio/ 下没有能解码的 forever.*，电视先用合成的占位旋律。'
     + '支持 mp3 / m4a / flac / wav / ogg；.ncm 不行，浏览器解不开。');
 }
+// 这首歌只解一次。点"进入"那一下会先解码好（见 enterEl 的 handler），
+// 等玩家真去开电视时如果还没解完，就复用同一个 Promise，别再下再解一遍。
+let songP = null;
+const songReady = urls => songP || (songP = loadSong(urls));
 function tvAudio(on) {
   if (!AC) return;
   makeTvChain();
@@ -1239,7 +1253,7 @@ function tvAudio(on) {
     ramp(tvGain.gain, 0.55, 3.5);          // 静音由 master 统一管，这里不用管 muted
   };
   if (tvBuf) start();
-  else loadSong(NODES.living.tv.songs).then(start);
+  else songReady(NODES.living.tv.songs).then(start);
 }
 
 
@@ -1688,6 +1702,17 @@ enterEl.addEventListener('click', () => {
   if (enterEl.classList.contains('wait')) return;    // 第一间屋子还没解码好，先别放人进去
   initAudio();
   AC?.resume();
+  // 电视那首歌现在就解码好。文件在门槛那一步已经下载完了，但 2.2MB 的 mp3
+  // decodeAudioData 一次还要几百毫秒——等玩家点了电视才现解，就是"点了半天不出声"。
+  if (node === 'living' || node === 'bedroom' || node === 'corridor') {
+    songReady(NODES.living.tv.songs);
+  }
+  // 读档回到后面章节时，那段录像不在门槛名单里（preload="none"，还没开始拉）。
+  // 这儿补一下：真要举手机的时候它已经在缓存里了，而不是现拉现黑一屏。
+  {
+    const v = document.querySelector('#phone .vid');
+    if (v && v.readyState === 0) v.load();
+  }
   resumeStuck();                                     // 读档落在演出中间：补跑那一段
   // 到这一下才开始排队预热。两条队各自串行、互不打断：
   //   全景图那条（warmPanos）管"换房间不再黑屏"，贴片那条管剧情图。
@@ -1699,14 +1724,83 @@ enterEl.addEventListener('click', () => {
   if (TOUCH) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
 });
-// 首屏只卡一样东西：当前这间屋子的全景图解码 + 上显存。它到位之前"点击进入"是灰的、
-// 点不动——以前点进去看到的是几秒钟纯黑，比等着更像坏了。剩下的一律后台排队。
+// 首屏门槛：这一幕要用的东西**全部**就位才放人进去，并且给一条真的进度条。
+// 以前只等当前这间屋子的全景图，结果人一进来屋子有了，可电视那首歌、墙上那面照片墙、
+// 第一幕手机里那段录像还在路上——点下去就是没声音、没画面。
+// 名单按场景挑：在自己家（第一章开场）才需要电视/照片墙/手机那一套，
+// 读档回到后面章节就只等那间屋子的全景图，不让人白等 3MB。
+function gateList() {
+  const n = NODES[node];
+  const list = [n.pano, n.panoDay];                 // 夜 + 白天两张，着色器同时要
+  if (node === 'living' || node === 'bedroom' || node === 'corridor') {
+    list.push('audio/rain.mp3',
+              'images/tv-singer-strip.png',         // 电视屏幕那条胶片
+              'audio/forever.mp3',                  // 电视里那首歌
+              'images/phone-vid.mp4',               // 第一幕：手机里那段录像
+              'images/phone-hand.png', 'images/phone-hand-front.png',
+              'images/ex-wall.jpg');                // 照片墙第一张（整面墙）
+  }
+  return [...new Set(list.filter(Boolean))];
+}
+// 并行下载 + 按字节报进度。总字节数是各条响应的 content-length 陆续加起来的，
+// 所以百分比只许往前走（onProgress 里取 max），不然后到的那一条会把条子往回拽。
+async function gateLoad(urls, onProgress) {
+  let total = 0, got = 0;
+  await Promise.all(urls.map(async u => {
+    try {
+      const r = await fetch(u);
+      if (!r.ok) return;
+      total += +(r.headers.get('content-length') || 0);
+      if (!r.body) { await r.arrayBuffer(); onProgress(got, total); return; }
+      const rd = r.body.getReader();
+      for (;;) {
+        const {done, value} = await rd.read();
+        if (done) break;
+        got += value.length;
+        onProgress(got, total);
+      }
+    } catch (e) { /* 少一个也不能把开场卡死在这儿 */ }
+  }));
+  return {got, total};
+}
+// 录像光下载完不够，还得等它解出第一帧，不然举起手机是一块黑屏。
+// video 标签是 preload="none"：让门槛那一步的 fetch 先把文件抓进缓存，
+// 这里再 load() 从缓存读——不然 video 自己会再下一遍（近 1MB，慢线路上很疼）。
+function videoReady(ms = 8000) {
+  const v = document.querySelector('#phone .vid');
+  if (!v) return Promise.resolve(false);
+  if (v.readyState >= 3) return Promise.resolve(true);
+  return new Promise(res => {
+    const ok = () => { clearTimeout(t); v.removeEventListener('canplay', ok); res(true); };
+    const t = setTimeout(() => { v.removeEventListener('canplay', ok); res(false); }, ms);
+    v.addEventListener('canplay', ok);
+    v.load();
+  });
+}
 {
   const label = enterEl.innerHTML;
+  const loadEl = document.getElementById('load');
+  const barEl = loadEl.querySelector('i');
+  const txtEl = loadEl.querySelector('em');
+  let shown = 0;
+  const show = (got, total) => {
+    if (total > 0) shown = Math.max(shown, Math.min(99, got / total * 100));
+    barEl.style.width = shown.toFixed(1) + '%';
+    txtEl.textContent = (got / 1048576).toFixed(1) + ' / '
+      + (total / 1048576).toFixed(1) + ' MB';
+  };
   enterEl.classList.add('wait');
-  enterEl.innerHTML = '正在载入…<span>第一间屋子的画面还在解码</span>';
-  panoReady(NODES[node].pano).then(() => {
-    if (!enterEl.classList.contains('wait')) return;
+  enterEl.innerHTML = '正在载入…<span>这一幕要用的画面和声音全部就位之后才开始</span>';
+  loadEl.classList.add('on');
+  show(0, 0);
+  gateLoad(gateList(), show).then(async () => {
+    txtEl.textContent = '正在解码…';
+    // 下载完只是文件到了：全景图还要推上显存，录像还要解出第一帧
+    await Promise.all([...gateList().filter(u => u.endsWith('.jpg') && u.includes('pano-'))
+      .map(panoReady), videoReady()]);
+    barEl.style.width = '100%';
+    txtEl.textContent = '就绪';
+    setTimeout(() => loadEl.classList.remove('on'), 260);
     enterEl.classList.remove('wait');
     enterEl.innerHTML = label;
   });
