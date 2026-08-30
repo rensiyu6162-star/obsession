@@ -437,16 +437,16 @@ const mark = k => { S.flags[k] = true; };
 // 同一个机位、同一栋房子（out-eve / empty-eve 是顺着 v1 那张 img2img 下来的），
 // 换的只是贴图和光：v1 是白天他进门，两小时之后天就有点黑了——路灯刚亮、影子全没了，
 // 他家一楼的窗户是暖黄的（他把灯留着了，所以后面进屋里也是亮的）。
-const PANO_OUT_HIM = 'images/pano-outside-out-eve.png';
-const PANO_OUT_EMPTY = 'images/pano-outside-empty-eve.png';
+const PANO_OUT_HIM = 'images/pano-outside-out-eve.jpg';
+const PANO_OUT_EMPTY = 'images/pano-outside-empty-eve.jpg';
 // 第四张：全黑的同一条街。"手机没掏出来"那条支线走到最后，她是自己从他家走出来的，
 // 那时候比出门那会儿又黑了一大截：天全黑、他家每一扇窗都灭了。
 // 也是拿同一条街的图当参考生的，房子、灌木、车、树一个都没动，所以热点坐标继续通用。
-const PANO_OUT_DUSK = 'images/pano-outside-dusk.png';
+const PANO_OUT_DUSK = 'images/pano-outside-dusk.jpg';
 // 第二章那两张：她自己租下的隔壁。镜像户型、空屋子、裸地板，什么家具都没有——
 // 一个纸箱、一台电钻、一个睡袋，这就是她搬过来的全部。空本身就是这一章的调子。
-const PANO_ND_LIVING = 'images/pano-nextdoor-living-v1.png';
-const PANO_ND_BED = 'images/pano-nextdoor-bed-v1.png';
+const PANO_ND_LIVING = 'images/pano-nextdoor-living-v1.jpg';
+const PANO_ND_BED = 'images/pano-nextdoor-bed-v1.jpg';
 
 // 场景图：每个节点一张全景图 + 若干热点。
 // 热点坐标用平面全景图上的 u/v（u 水平 0~1 左→右，v 垂直 0~1，0 是图顶端），
@@ -456,7 +456,7 @@ const PANO_ND_BED = 'images/pano-nextdoor-bed-v1.png';
 const NODES = {
   living: {
     name: '客厅',
-    pano: 'images/pano-livingroom-v1.png',
+    pano: 'images/pano-livingroom-v1.jpg',
     panoDay: 'images/pano-livingroom-day.jpg',
     lamp: {u:0.595, v:0.524},          // 该节点的主光源，关灯效果以此为中心
     off: 0,
@@ -478,7 +478,7 @@ const NODES = {
   },
   bedroom: {
     name: '卧室',
-    pano: 'images/pano-bedroom-v1.png',
+    pano: 'images/pano-bedroom-v1.jpg',
     panoDay: 'images/pano-bedroom-day.jpg',
     lamp: {u:0.458, v:0.270},          // 天花板吊灯
     off: 0,
@@ -504,7 +504,7 @@ const NODES = {
   },
   corridor: {
     name: '走廊',
-    pano: 'images/pano-corridor-v1.png',
+    pano: 'images/pano-corridor-v1.jpg',
     panoDay: 'images/pano-corridor-day.jpg',
     off: 0,                            // 只有一支坏掉的日光灯，没有可开关的灯
     rain: 0.18, drone: 0.13,           // 无窗，雨声闷，低频嗡鸣更重
@@ -530,7 +530,7 @@ const NODES = {
   // 同一个机位另有两张：他出门（-out）和门口空了（-empty），见 hedgeBeat。
   outside: {
     name: '他家门外',
-    pano: 'images/pano-outside-v1.png',
+    pano: 'images/pano-outside-v1.jpg',
     off: 0,
     // 户外一滴雨都不该有。这里的底噪走 wind（合成的风，见 initAudio），
     // 不能拿 rain.mp3 压低了当"远处车流"——那是一段真的雨声录音，压多低都还是雨。
@@ -590,7 +590,7 @@ const NODES = {
   // 前门在图的左右边缘（接缝上），所以从门外走进来时 arrive 取 0.02。
   hishouse: {
     name: '他家',
-    pano: 'images/pano-hishouse-v2.png',
+    pano: 'images/pano-hishouse-v2.jpg',
     off: 0,
     rain: 0, wind: 0, drone: 0.06,
     // 第二章周二那一趟进门：这两句以前是自动传送之后播的，现在挪到真的走进来之后。
@@ -638,7 +638,7 @@ const NODES = {
   //（u=x/1774, v=y/887）。
   hisbed: {
     name: '他的卧室',
-    pano: 'images/pano-hisbed-v11.png',
+    pano: 'images/pano-hisbed-v11.jpg',
     off: 0,
     rain: 0, wind: 0, drone: 0.05,
     // 进门那句不能挂在楼梯热点上——那句是在楼梯上说的。走完才说这一句。
@@ -676,7 +676,7 @@ const NODES = {
   // 坐标就是那道亮着的缝（进来时朝的也是这个方向）。
   underbed: {
     name: '床底',
-    pano: 'images/pano-underbed-v2.png',
+    pano: 'images/pano-underbed-v2.jpg',
     off: 0,
     rain: 0, wind: 0, drone: 0.14,          // 无窗无雨，只剩心跳那种低频压得更重
     onArrive: () => underBedBeat(),
@@ -1328,13 +1328,17 @@ function makeDepthGeometry(at) {
   return g;
 }
 function loadDepth(name) {
-  const base = NODES[name].pano.replace('pano-', 'depth-');
-  fetch(base.replace(/\.png$/, '.json'))
+  // 全景图压成 JPEG 之后后缀不再是 .png（见 tools/compress_assets.py），
+  // 所以这儿把后缀整段换掉，别再只认 .png——不然深度图永远找不到，
+  // 每个房间都退化成"贴在球壳上"，走动时墙不会近大远小。
+  const base = NODES[name].pano.replace('pano-', 'depth-').replace(/\.(png|jpe?g)$/, '');
+  fetch(base + '.json')
     .then(r => r.ok ? r.json() : null)
     .then(meta => {
       if (!meta) return;
       if (!meta.reliable) { console.log(name, '深度图定标不可靠，继续用解析房间壳'); return; }
       const im = new Image();
+
       im.onload = () => {
         const c = Object.assign(document.createElement('canvas'), {width: im.width, height: im.height});
         const cx = c.getContext('2d');
@@ -1351,7 +1355,8 @@ function loadDepth(name) {
         console.log(name, `深度已载入 ${meta.minDepth}~${meta.maxDepth}m，走动半径放宽到 ${DEPTH_R}m`);
       };
       im.onerror = () => console.log(name, '深度图加载失败', base);
-      im.src = base;
+      im.src = base + '.png';        // 深度图本身必须留 PNG：那是数据，不能有压缩噪点
+
     })
     .catch(() => {});
 }
@@ -1613,6 +1618,8 @@ enterEl.addEventListener('click', () => {
   initAudio();
   AC?.resume();
   resumeStuck();                                     // 读档落在演出中间：补跑那一段
+  preloadPlates(PRELOAD_CH1);                        // 到这一下才开始排队预热贴片
+
   if (TOUCH) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
 });
@@ -2519,13 +2526,25 @@ const PLATE_INVITEB = ['images/invite-back.jpg', '50% 50%'];
 const PLATE_CLAIRE2 = ['images/claire-underbed-2.jpg', '50% 50%'];
 // 内页豆腐块：失踪的房客，二十二岁，最后一次被看见是周日。没有照片，也没有名字。
 const PLATE_MISSING = ['images/news-missing.jpg', '50% 50%'];
-for (const [u] of [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
-                   PLATE_STANDOFF, PLATE_APPRAISE,
-                   PLATE_CHOKE, PLATE_FLOOR, PLATE_AFTER, PLATE_CEILING,
-                   PLATE_TOLET, PLATE_NEWS,
-                   PLATE_FEET, PLATE_BUCKLE, PLATE_LEAVE]) {
-  const im = new Image(); im.src = u;
+// 贴片预热。以前是模块加载时一口气 new Image() 十五张——在慢网上这十五张会跟
+// 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成一张一张排队，
+// 而且等到玩家点了"进入"之后才开始（那时候第一张全景已经在解码了）。
+function preloadPlates(list) {
+  let i = 0;
+  const next = () => {
+    if (i >= list.length) return;
+    const im = new Image();
+    im.onload = im.onerror = () => setTimeout(next, 120);
+    im.src = list[i++][0];
+  };
+  next();
 }
+const PRELOAD_CH1 = [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
+                     PLATE_STANDOFF, PLATE_APPRAISE,
+                     PLATE_CHOKE, PLATE_FLOOR, PLATE_AFTER, PLATE_CEILING,
+                     PLATE_TOLET, PLATE_NEWS,
+                     PLATE_FEET, PLATE_BUCKLE, PLATE_LEAVE];
+
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
 const darkOff = () => darkEl.classList.remove('on');
@@ -2803,12 +2822,12 @@ async function toLetBeat(h) {
 async function chapter2Start() {
   if (has('ch2')) return;
   mark('ch2');
-  // 这一章的贴片到这时候才预加载：开局就压进去十张图没必要，走到这儿再拉
-  for (const [u] of [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
-                     PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
-                     PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]) {
-    const im = new Image(); im.src = u;
-  }
+  // 这一章的贴片到这时候才预加载：开局就压进去十张图没必要，走到这儿再拉，
+  // 而且一张一张排队（见 preloadPlates），别跟当前场景抢带宽
+  preloadPlates([PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
+                 PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
+                 PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]);
+
   voxLoad('drill');
   voxLoad('breath');            // "现在就钻"那一支偷看时要用，先解码好
   sceneId++;
