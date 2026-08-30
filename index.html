@@ -451,7 +451,16 @@ import * as THREE from 'three';
 // day 是打完那通电话之后的"周六白天"：屋里提亮、雨停、目标变成那道防盗门。
 const S = {flags: {}, dread: 0, seen: {}, day: false};
 const has = k => !!S.flags[k];
-const mark = k => { S.flags[k] = true; };
+// 统计完全在后台发送，失败也不影响游戏；不记录 IP、设备信息或任何个人内容。
+const STAT_URL = '/stats/event';
+let statSid = '';
+try { statSid = localStorage.getItem('chimi.stat.sid') || crypto.randomUUID();
+      localStorage.setItem('chimi.stat.sid', statSid); } catch (e) { statSid = String(Math.random()); }
+function stat(event, data = {}) {
+  try { fetch(STAT_URL, {method:'POST', keepalive:true, headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({event, sid: statSid, node, data})}).catch(() => {}); } catch (e) {}
+}
+const mark = k => { if (!S.flags[k]) stat('story_mark', {mark:k}); S.flags[k] = true; };
 // 门外那个机位的三张图：他进门 / 两小时后他出门 / 门口空了。
 // 同一个机位、同一栋房子（out-eve / empty-eve 是顺着 v1 那张 img2img 下来的），
 // 换的只是贴图和光：v1 是白天他进门，两小时之后天就有点黑了——路灯刚亮、影子全没了，
@@ -1700,6 +1709,7 @@ const showEnter = () => {
 };
 enterEl.addEventListener('click', () => {
   if (enterEl.classList.contains('wait')) return;    // 第一间屋子还没解码好，先别放人进去
+  stat('game_enter');
   initAudio();
   AC?.resume();
   // 电视那首歌现在就解码好。文件在门槛那一步已经下载完了，但 2.2MB 的 mp3
@@ -1750,7 +1760,7 @@ function gateList() {
 // 所以百分比只许往前走（onProgress 里取 max），不然后到的那一条会把条子往回拽。
 async function gateLoad(urls, onProgress) {
   let total = 0, got = 0;
-  await Promise.all(urls.map(async u => {
+  const one = async u => {
     try {
       const r = await fetch(u);
       if (!r.ok) return;
@@ -1764,7 +1774,14 @@ async function gateLoad(urls, onProgress) {
         onProgress(got, total);
       }
     } catch (e) { /* 少一个也不能把开场卡死在这儿 */ }
-  }));
+  };
+  // 某些 Win11 浏览器在视频响应被缓存/暂停时不会结束 reader。
+  // 单个资源不能把整个“点击进入”永久锁住：其它资源照常继续，超时的让视频自己的
+  // videoReady 再尝试一次，已经加载好的画面和声音不受影响。
+  await Promise.all(urls.map(u => Promise.race([
+    one(u),
+    sleep(22000),
+  ])));
   return {got, total};
 }
 // 录像光下载完不够，还得等它解出第一帧，不然举起手机是一块黑屏。
@@ -1799,12 +1816,21 @@ function videoReady(selector = '#phone .vid', ms = 8000) {
   show(0, 0);
   gateLoad(gateList(), show).then(async () => {
     txtEl.textContent = '正在解码…';
-    // 下载完只是文件到了：全景图还要推上显存，录像还要解出第一帧
-    await Promise.all([...gateList().filter(u => u.endsWith('.jpg') && u.includes('pano-'))
-      .map(panoReady), videoReady('#phone .vid'), videoReady('#outvid')]);
+    // 下载完只是文件到了：全景图还要推上显存，录像还要解出第一帧。
+    // 解码失败/卡住时不能让入口永远保持 wait；资源会在真正使用时继续重试。
+    await Promise.race([
+      Promise.all([...gateList().filter(u => u.endsWith('.jpg') && u.includes('pano-'))
+        .map(panoReady), videoReady('#phone .vid'), videoReady('#outvid')]),
+      sleep(12000),
+    ]);
     barEl.style.width = '100%';
     txtEl.textContent = '就绪';
     setTimeout(() => loadEl.classList.remove('on'), 260);
+    enterEl.classList.remove('wait');
+    enterEl.innerHTML = label;
+  }).catch(() => {
+    // 最后的入口兜底：不因统计、缓存或某个浏览器的媒体异常把整局游戏挡死。
+    loadEl.classList.remove('on');
     enterEl.classList.remove('wait');
     enterEl.innerHTML = label;
   });
