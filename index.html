@@ -2510,6 +2510,10 @@ const PLATE_PEEP2 = ['images/peep-two.jpg', '50% 50%'];
 const PLATE_PEEP2B = ['images/peep-two-bed.jpg', '50% 50%'];
 const PLATE_PEEPC = ['images/peep-claire.jpg', '50% 50%'];
 const PLATE_BOX = ['images/shoebox.jpg', '50% 50%'];
+// 洞里塞进来那张照片的正反面（第二章的邀请）。正面是她自己在站台、侧面机位，
+// 脸在头发后面——主角的正脸这个游戏一次都不给；背面是那行蓝色圆珠笔。
+const PLATE_INVITE = ['images/invite-photo.jpg', '50% 50%'];
+const PLATE_INVITEB = ['images/invite-back.jpg', '50% 50%'];
 // 第二章的死法：跟第一章那张 claire-underbed 是同一个机位、同一张倒过来的脸，
 // 唯一的区别是这次她在笑——因为这一次她早就知道床底下有人。
 const PLATE_CLAIRE2 = ['images/claire-underbed-2.jpg', '50% 50%'];
@@ -2801,7 +2805,8 @@ async function chapter2Start() {
   mark('ch2');
   // 这一章的贴片到这时候才预加载：开局就压进去十张图没必要，走到这儿再拉
   for (const [u] of [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
-                     PLATE_PEEPC, PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]) {
+                     PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
+                     PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]) {
     const im = new Image(); im.src = u;
   }
   voxLoad('drill');
@@ -3036,13 +3041,16 @@ async function ch2InviteBeat() {
     {t: '那一夜你没有睡。你把睡袋拖到墙根，脸朝着那个洞，等光再变一次。', d: 8.0},
     {t: '光没有再变。天快亮的时候，洞里落出来一样东西，掉在你的手背上。', d: 8.0,
      f: () => blip('note')},
-    {t: '是一张照片。冲印出来的那种，边上带白框，边角有点卷。', d: 7.0},
-    {t: '照片上是你。站台，从背后拍的，你正低着头看手机。你不记得这一天。', d: 8.6,
+    {t: '是一张照片。冲印出来的那种，边上带白框，边角有点卷。', d: 7.0,
+     f: () => showPlate(PLATE_INVITE)},
+    {t: '照片上是你。站台，从侧面拍的，你正低着头看手机。你不记得这一天。', d: 8.6,
      f: () => { S.dread += 5; }},
-    {t: '背面有一行蓝色圆珠笔，字写得很轻：', d: 5.6},
+    {t: '背面有一行蓝色圆珠笔，字写得很轻：', d: 5.6,
+     f: () => showPlate(PLATE_INVITEB)},
     {t: '「这样看不清。你该进来看。」', d: 6.4, f: () => blip('sting')},
-    {t: '你把它翻过来又翻过去，翻了很多遍。你没有把它塞回洞里。', d: 7.6},
-    {t: '周二下午，他家的门响了两次：他先走的，她后走的。', d: 7.0},
+    {t: '你把它翻过来又翻过去，翻了很多遍。你没有把它塞回洞里。', d: 7.6,
+     f: () => showPlate(PLATE_INVITE)},
+    {t: '周二下午，他家的门响了两次：他先走的，她后走的。', d: 7.0, f: hidePlate},
     {t: '她走的时候在门口回头看了一眼隔壁——看的是你的窗。你在窗帘后面站着，没有动。', d: 9.2},
     {t: '门声散了以后，整排房子都很静。', d: 5.4},
     {t: '你把那张照片放进口袋。', d: 5.0,
