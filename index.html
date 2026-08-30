@@ -114,6 +114,8 @@
   /* 第一次进入要挡住全部；但按 Esc 退出后再盖回来的这一层要沉到面板下面，
      不然它会吃掉左上角那些按钮的点击（z-index 30 盖住 z-index 10 的 #hud） */
   #enter.back{z-index:9;background:rgba(0,0,0,.5);font-size:15px}
+  /* 第一间屋子的全景图还在下载/解码：这层先不接受点击，免得点进去看见一片黑 */
+  #enter.wait{cursor:progress;color:#8b8b90}
   /* 开门那一下的过曝：白天的光从门缝里灌进来，顺便盖住"房间壳换成视频"这个切换 */
   #flash{position:fixed;inset:0;z-index:37;pointer-events:none;background:#f2efe9;
          opacity:0;transition:opacity 1.4s ease-in}
@@ -1296,19 +1298,45 @@ tvStrip.wrapS = tvStrip.wrapT = THREE.ClampToEdgeWrapping;
 
 let panoSize = '加载中';
 const texCache = {};
+// url -> Promise：文件下载完 **并且** 贴图已经推上显存才 resolve。
+// 只等下载是不够的：three 默认要等到第一次真拿它去画的那一帧才上传显存，
+// 那一下的卡顿就是"进屋先黑一下、几秒之后才出图"的另一半原因。
+const panoWait = {};
 function loadPano(url) {
   if (texCache[url]) return texCache[url];
+  let done;
+  panoWait[url] = new Promise(r => { done = r; });
   const t = new THREE.TextureLoader().load(url, tt => {
     const max = renderer.capabilities.maxTextureSize;
     panoSize = `${tt.image.width}x${tt.image.height}`;
     const ratio = tt.image.width / tt.image.height;
     if (Math.abs(ratio - 2) > 0.01) panoSize += ` ⚠ 比例 ${ratio.toFixed(2)}:1 不是 2:1`;
     if (tt.image.width > max) panoSize += ` ⚠ 超过本机贴图上限 ${max}`;
-  }, undefined, () => { panoSize = `⚠ ${url} 加载失败`; });
+    try { renderer.initTexture(t); } catch (e) {}       // 现在就上传，别留到切场景那一帧
+    done(true);
+  }, undefined, () => { panoSize = `⚠ ${url} 加载失败`; done(false); });
   t.colorSpace = THREE.SRGBColorSpace;
   texCache[url] = t;
   return t;
 }
+const panoReady = url => (loadPano(url), panoWait[url]);
+// 所有房间的全景图在后台排队预热：一张一张来，不跟当前这间屋子抢带宽。
+// 顺序就是 NODES 的定义顺序，也正好是剧情顺序。十二张一共 5MB 出头，
+// 开场那段独白的时间就够它拉完，之后每次换房间、换黄昏/白天那一张都是现成的。
+// 为什么不做"全局进度条、全都载完才让人玩"：整包 33MB，真要全等，开场得干等半分钟，
+// 而其中大半（第二章那些贴片、照片墙）几分钟之内根本用不到。
+async function warmPanos() {
+  const list = [...new Set(Object.values(NODES)
+    .flatMap(n => [n.pano, n.panoDay])
+    .concat([PANO_OUT_HIM, PANO_OUT_EMPTY, PANO_OUT_DUSK, PANO_ND_LIVING, PANO_ND_BED])
+    .filter(Boolean))];
+  for (const url of list) {
+    await panoReady(url);
+    await sleep(120);
+  }
+}
+
+
 // 一个"房间"= 一份房间壳网格 + 自己的贴图和灯光 uniform。
 // 换房间时会同时存在两个房间（旧的淡出、新的淡入），所以每个都要独立的 uniform。
 // 每个节点的 plan 不同，网格也就不同，按节点缓存。
@@ -1639,16 +1667,32 @@ const showEnter = () => {
   if (endEl.style.display !== 'flex') enterEl.style.display = 'flex';
 };
 enterEl.addEventListener('click', () => {
+  if (enterEl.classList.contains('wait')) return;    // 第一间屋子还没解码好，先别放人进去
   initAudio();
   AC?.resume();
   resumeStuck();                                     // 读档落在演出中间：补跑那一段
-  // 到这一下才开始排队预热贴片。读档回到第二章的话预热第二章那一摞——
-  // chapter2Start() 不会再跑第二遍，那摞图没人替他们拉。
+  // 到这一下才开始排队预热。两条队各自串行、互不打断：
+  //   全景图那条（warmPanos）管"换房间不再黑屏"，贴片那条管剧情图。
+  // 读档回到第二章的话预热第二章那一摞——chapter2Start() 不会再跑第二遍，
+  // 那摞图没人替他们拉。
+  warmPanos();
   preloadPlates(has('ch2') ? PRELOAD_CH2 : PRELOAD_CH1);
 
   if (TOUCH) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
 });
+// 首屏只卡一样东西：当前这间屋子的全景图解码 + 上显存。它到位之前"点击进入"是灰的、
+// 点不动——以前点进去看到的是几秒钟纯黑，比等着更像坏了。剩下的一律后台排队。
+{
+  const label = enterEl.innerHTML;
+  enterEl.classList.add('wait');
+  enterEl.innerHTML = '正在载入…<span>第一间屋子的画面还在解码</span>';
+  panoReady(NODES[node].pano).then(() => {
+    if (!enterEl.classList.contains('wait')) return;
+    enterEl.classList.remove('wait');
+    enterEl.innerHTML = label;
+  });
+}
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === app;
   if (locked && !enterEl.classList.contains('back')) {
