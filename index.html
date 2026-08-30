@@ -4028,7 +4028,11 @@ async function forceLandscape() {
     if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
   } catch (e) { /* 用户拒绝全屏也没关系，下面还有一条路 */ }
   try {
-    await screen.orientation?.lock?.('landscape');
+    // iOS Safari 通常没有 orientation.lock。可选链返回 undefined 不会抛异常，
+    // 如果直接 await 它，下面会误判成“系统横屏成功”，然后把软件旋转兜底跳过。
+    const lock = screen.orientation?.lock;
+    if (typeof lock !== 'function') throw new Error('orientation lock unavailable');
+    await lock.call(screen.orientation, 'landscape');
     rotateEl.classList.remove('on');
     setTimeout(resize, 240);
     return;
