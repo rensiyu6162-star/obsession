@@ -1949,13 +1949,16 @@ const ray = new THREE.Raycaster();
 // 用 innerHTML 是为了那一行说话人，所以正文得转义——台词里现在没有尖括号，
 // 但以后随手写一句带 < 的就会把字幕吃掉，先挡住。
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+let lastSay = 0;                               // 最后一句字幕的时间，看门狗用
 const say = (txt, ms = 4200, who = '') => {
   if (!txt) return;
+  lastSay = performance.now();                 // 看门狗靠它判断"这会儿还有没有戏在演"
   storyEl.innerHTML = (who ? '<b class="who">' + esc(who) + '</b>' : '') + esc(txt);
   storyEl.classList.add('on');
   clearTimeout(storyEl._t);
   storyEl._t = setTimeout(() => storyEl.classList.remove('on'), ms);
 };
+
 const ndc = new THREE.Vector2();
 
 // —— 房间形状标定 ——
@@ -2219,6 +2222,17 @@ function askChoice(...labels) {
     enterEl.style.display = 'none';
     document.exitPointerLock?.();
   });
+}
+// 存档可能正好停在一个二选一上。选项本身不是状态、是两个 DOM 按钮，刷新就没了——
+// 于是读档回来是一屏没有任何出口的画面（用户报的就是床底下那个手机）。
+// 解法：把"现在停在哪个选择上"写进存档（S.pend），读档时照 PEND 表把这个选择重新摆一次。
+// 选完立刻清掉，所以存档里最多只会有一个待办的选择。
+async function askPick(id, ...labels) {
+  S.pend = id;
+  save();
+  const pick = await askChoice(...labels);
+  if (S.pend === id) { S.pend = null; save(); }
+  return pick;
 }
 // 一段通话按顺序走：有配音的那句等配音放完，没配音的按 d 秒等。
 // sceneId 一变（放下手机、按红键挂断）整段就作废，不会串到下一次。
@@ -2926,7 +2940,20 @@ async function judeLeavesBeat() {
         + '低低的一下一下，蹭着木头。应该没人会注意到。应该。', d: 8.4,
      f: () => { S.dread += 2; }},
   ]);
-  const pick = await askChoice(
+  await phoneChoice();
+}
+// 口袋里那个还在震的手机：掏，还是不掏。单独拆成一支函数，因为读档很可能正停在这儿——
+// PEND 表要能把这个选择单独问一遍，而不用把前面那整段演出重演一次。
+// resume=true 是从存档接上来的：那会儿屋里是静的、字幕也是空的，
+// 所以先补一句"你在哪、在等什么"，再把选项摆出来。
+async function phoneChoice(resume) {
+  if (has('phoneOut') || has('phoneLeftOn')) return;
+  if (resume) {
+    say('你还趴在他的床底下。裤子口袋里那个手机还在一下一下地震。', 4600);
+    await sleep(2000);
+  }
+  loopSfx('buzz', true);                       // 已经在响就是空操作；读档回来则是把那声闷震接回去
+  const pick = await askPick('phone',
     '掏出手机，把震动关掉',
     '不动。就让它这样响下去');
   if (pick === 0) {
@@ -3130,7 +3157,19 @@ async function drillBeat(h) {
     {t: '你跪在睡袋上，把钻头对进那个凹坑里。手很稳，你自己都意外。', d: 7.4,
      f: () => showPlate(PLATE_DRILL)},
   ]);
-  const pick = await askChoice(
+  await drillChoice();
+  drillRunning = false;
+}
+// 钻的那个二选一。跟床底那个手机一样单独拆出来：读档正停在这儿的话，
+// PEND 表只重问这一下，不重演拿电钻那两句。
+async function drillChoice(resume) {
+  if (has('holeOpen')) return;
+  drillRunning = true;
+  if (resume) {
+    say('电钻还在你手里，钻头顶着墙脚那个凹坑。', 4200);
+    await sleep(1800);
+  }
+  const pick = await askPick('drill',
     '现在就钻',
     '等隔壁有声音的时候再钻');
   if (pick === 0) {
@@ -3262,8 +3301,14 @@ async function peepBeat(h) {
 }
 // 被那只眼睛看回来之后的二选一。两条都往周二走——
 // 「堵上」不是逃生门：她第二天自己又把胶带抠开了。这一支只是让她亲手承认这件事。
-async function peepAfter() {
-  const pick = await askChoice(
+async function peepAfter(resume) {
+  if (has('taped') || has('staredBack')) return;
+  if (resume) {
+    showPlate(PLATE_PEEPC);
+    say('那只眼睛还贴在洞的另一侧，隔着四毫米看着你。', 4600);
+    await sleep(2000);
+  }
+  const pick = await askPick('peepAfter',
     '把洞堵上',
     '继续看着她');
   if (pick === 0) {
@@ -3322,18 +3367,69 @@ async function ch2InviteBeat() {
   save();
 }
 // 床底和洞口这几处是"没有任何可点的东西、全靠演出往下走"的地方。
-// 在这中间刷新页面，热点是空的、箭头也是空的，人就真的卡住了——这才是最像无头苍蝇的
-// 一种情况。所以点"进入"那一下补跑一次没做完的那一拍。只跑一次（resumed）。
+// 在这中间刷新页面（或者读一个存在这中间的档），热点是空的、箭头也是空的，人就真的卡住了。
+// 所以点"进入"那一下补跑一次没做完的那一拍。只跑一次（resumed）；之后交给底下那个看门狗。
+// 待办的二选一（S.pend）优先于 flag 组合：停在选择上是最容易把人锁死的一种。
+const PEND = {
+  phone:     {at: 'underbed', run: () => phoneChoice(true)},
+  drill:     {at: 'ndbed',    run: () => drillChoice(true)},
+  peepAfter: {at: 'ndbed',    run: () => peepAfter(true)},
+};
 let resumed = false;
 function resumeStuck() {
   if (resumed) return;
   resumed = true;
-  if (node === 'underbed') {
-    if (has('ch2Under') && !has('sawBox')) { shoeboxBeat(); return; }
-    if (!has('sawThem')) { underBedBeat(); return; }
-  }
-  if (node === 'ndbed' && has('peeped2') && !has('invited')) ch2InviteBeat();
+  resumeFix();
 }
+// 把"演到一半就断了"的每一种 flag 组合都接回去。返回 true 表示这一拍已经接上了。
+// 顺序是剧情顺序，每一支都靠自己那个 mark 幂等，接第二遍也不会重演。
+function resumeFix() {
+  if (S.pend) {
+    const p = PEND[S.pend];
+    if (p && p.at === node) { p.run(); return true; }
+    S.pend = null;                             // 对不上号的待办（改过版本的旧档）就扔掉
+  }
+  if (has('killedClaire')) { showEnding(END_BEDSIDE); return true; }
+  if (has('ch2Dead')) { showEnding(END_47); return true; }
+  if (node === 'underbed') {
+    if (has('ch2Under')) {
+      if (!has('sawBox')) { shoeboxBeat(); return true; }
+      ch2DeathBeat(); return true;             // 鞋盒看完了但没演到结局：从楼梯声重来
+    }
+    if (!has('sawThem')) { underBedBeat(); return true; }
+    if (!has('judeLeft2')) { judeLeavesBeat(); return true; }
+    if (!has('phoneOut') && !has('phoneLeftOn')) { phoneChoice(true); return true; }
+    if (has('phoneOut')) { caughtBeat(); return true; }
+    if (!has('claireLeft')) { claireLeavesBeat(); return true; }
+    return false;                              // claireLeft：箭头指着那道缝，可以自己爬出去
+  }
+  // 被发现之后那一整段（尖叫→对峙→动手）里没有一个中途的 mark，断在哪儿都从尖叫重来。
+  // 它自己会再溶回卧室，所以已经被顶到 hisbed 也能接。
+  if (node === 'hisbed' && has('phoneOut')) { caughtBeat(); return true; }
+  if (node === 'ndbed' && has('peeped2') && !has('invited')) { ch2InviteBeat(); return true; }
+  return false;
+}
+// 看门狗。上面那张表是照剧情一支一支写的，难保没有漏掉的组合；这儿只认一个现象：
+// 画面上既没有热点、又没有箭头能指、也没有正在走的演出/选项/通话——那就是卡住了。
+// 判"没在演"不能只看 sceneBusy：say + waitStep 那种手写的段落不算在里面，
+// 所以再加一条"最后一句字幕已经过去 12 秒"——剧情里最长的一句也才 9 秒多。
+// 两个条件都成立、并且连着三次（6 秒）都这样才动手。
+let stuckHits = 0, stuckSaid = false;
+setInterval(() => {
+  if (!resumed) return;                        // 还没点"进入"，画面本来就是静的
+  if (walking || sceneBusy > 0 || pickEl.classList.contains('on')
+      || phoneUp || callOn || endEl.style.display === 'flex'
+      || marks.length || performance.now() - lastSay < 12000) { stuckHits = 0; return; }
+  if (++stuckHits < 3) return;
+  stuckHits = 0;
+  if (resumeFix()) return;
+  applyGuide();                                // 也许只是箭头和热点没重建
+  buildSpots(node);
+  if (marks.length) return;
+  if (stuckSaid) return;                       // 这句只说一次，剩下的交给设置里那个重新开始
+  stuckSaid = true;
+  say('（这一拍没有能点的东西了。要是一直停在这儿，可以在右上角的设置里重新开始。）', 6000);
+}, 2000);
 // 周二那一趟不再自动传送了：她自己下楼、开自己家的门、走三步、推他家那道门。
 // 原来是一段旁白播完直接淡入他家客厅——省了两次点击，代价是第一视角断掉，
 // 而且"进他家"这件事变成了旁白替她做的。现在门口那两句留在热点自己的 text 上
