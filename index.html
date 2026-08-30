@@ -435,7 +435,7 @@
 <div id="ending"><h2></h2><p></p><button id="end-btn" type="button">再走一遍</button></div>
 <div id="flash"></div>
 <img id="plate" alt="">
-<video id="outvid" src="images/out-saturday.mp4" playsinline preload="auto"></video>
+<video id="outvid" src="images/out-saturday.mp4" playsinline preload="none"></video>
 
 
 
@@ -1737,6 +1737,7 @@ function gateList() {
               'images/tv-singer-strip.png',         // 电视屏幕那条胶片
               'audio/forever.mp3',                  // 电视里那首歌
               'images/phone-vid.mp4',               // 第一幕：手机里那段录像
+              'images/out-saturday.mp4',            // 周六出门后：咖啡馆录像
               'images/phone-hand.png', 'images/phone-hand-front.png',
               'images/ex-wall.jpg');                // 照片墙第一张（整面墙）
   }
@@ -1766,8 +1767,8 @@ async function gateLoad(urls, onProgress) {
 // 录像光下载完不够，还得等它解出第一帧，不然举起手机是一块黑屏。
 // video 标签是 preload="none"：让门槛那一步的 fetch 先把文件抓进缓存，
 // 这里再 load() 从缓存读——不然 video 自己会再下一遍（近 1MB，慢线路上很疼）。
-function videoReady(ms = 8000) {
-  const v = document.querySelector('#phone .vid');
+function videoReady(selector = '#phone .vid', ms = 8000) {
+  const v = document.querySelector(selector);
   if (!v) return Promise.resolve(false);
   if (v.readyState >= 3) return Promise.resolve(true);
   return new Promise(res => {
@@ -1797,7 +1798,7 @@ function videoReady(ms = 8000) {
     txtEl.textContent = '正在解码…';
     // 下载完只是文件到了：全景图还要推上显存，录像还要解出第一帧
     await Promise.all([...gateList().filter(u => u.endsWith('.jpg') && u.includes('pano-'))
-      .map(panoReady), videoReady()]);
+      .map(panoReady), videoReady('#phone .vid'), videoReady('#outvid')]);
     barEl.style.width = '100%';
     txtEl.textContent = '就绪';
     setTimeout(() => loadEl.classList.remove('on'), 260);
@@ -2625,11 +2626,18 @@ function exitDoor() {
   ramp(rainGain?.gain, 0, 1.5);
   ramp(droneGain?.gain, 0, 1.5);
   flashEl.classList.add('on');
-  setTimeout(() => {
+  setTimeout(async () => {
+    // 首屏已经预热过时这里立即返回；若某个浏览器没有复用 fetch 缓存，
+    // 再给它一次从缓存解码第一帧的机会，避免先铺出一块黑色视频。
+    await videoReady('#outvid', 5000);
     document.exitPointerLock?.();
     outVid.style.display = 'block';
     outVid.currentTime = 0;
-    outVid.play().catch(() => {});
+    outVid.play().catch(() => {
+      // 某些浏览器把延迟后的 play 判成失去手势，重新 load 后再尝试一次。
+      outVid.load();
+      outVid.play().catch(() => {});
+    });
     requestAnimationFrame(() => { outVid.style.opacity = 1; });
     flashEl.classList.remove('on');
   }, 1500);
