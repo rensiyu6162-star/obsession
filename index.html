@@ -469,7 +469,7 @@ const NODES = {
     panoDay: 'images/pano-livingroom-day.jpg',
     lamp: {u:0.595, v:0.524},          // 该节点的主光源，关灯效果以此为中心
     off: 0,
-    rain: 0.55, drone: 0.05,           // 有窗，雨声最大
+    rain: 0.55, drone: 0,              // 有窗，雨声最大。开场只该有雨——低频嗡鸣一律不给
     // 电视屏幕在全景图上的像素范围（量出来的：x 364~450, y 436~500，正好 4:3）。
     // 播放画面直接画进房间壳的着色器里，所以永远贴死在屏框上，走动也不会脱开。
     tv: {u0: 364 / 1774, u1: 450 / 1774, v0: 436 / 887, v1: 500 / 887,
@@ -491,7 +491,7 @@ const NODES = {
     panoDay: 'images/pano-bedroom-day.jpg',
     lamp: {u:0.458, v:0.270},          // 天花板吊灯
     off: 0,
-    rain: 0.35, drone: 0.07,
+    rain: 0.35, drone: 0,
     spots: [
       {u:0.458, v:0.270, label:'关灯',   action:'lamp', if: () => !S.day},
       {u:0.764, v:0.530, label:'回客厅', to:'living', arrive:0.955, text:'你退回客厅。'},
@@ -516,7 +516,7 @@ const NODES = {
     pano: 'images/pano-corridor-v1.jpg',
     panoDay: 'images/pano-corridor-day.jpg',
     off: 0,                            // 只有一支坏掉的日光灯，没有可开关的灯
-    rain: 0.18, drone: 0.13,           // 无窗，雨声闷，低频嗡鸣更重
+    rain: 0.18, drone: 0,              // 无窗，雨声闷；以前这儿的低频嗡鸣最重，现在收掉了
     spots: [
       {u:0.493, v:0.520, label:'回客厅', to:'living', arrive:0.055, text:'你退回客厅。'},
       {u:0.175, v:0.520, label:'防盗门', id:'door', dread:1,
@@ -543,7 +543,7 @@ const NODES = {
     off: 0,
     // 户外一滴雨都不该有。这里的底噪走 wind（合成的风，见 initAudio），
     // 不能拿 rain.mp3 压低了当"远处车流"——那是一段真的雨声录音，压多低都还是雨。
-    rain: 0, wind: 0.11, drone: 0.02,
+    rain: 0, wind: 0.11, drone: 0,
     // "手机没掏出来"那一支：她从他家走出来的那一下。这里只交代"外面已经黑了"，
     // 出租启事那张纸留给玩家自己转头发现（热点 tolet）。
     onArrive: () => {
@@ -601,7 +601,7 @@ const NODES = {
     name: '他家',
     pano: 'images/pano-hishouse-v2.jpg',
     off: 0,
-    rain: 0, wind: 0, drone: 0.06,
+    rain: 0, wind: 0, drone: 0,
     // 第二章周二那一趟进门：这两句以前是自动传送之后播的，现在挪到真的走进来之后。
     // 第一次进这栋房子（第一章）不说话——那时候进门那句挂在门自己身上。
     onArrive: () => {
@@ -649,7 +649,8 @@ const NODES = {
     name: '他的卧室',
     pano: 'images/pano-hisbed-v11.jpg',
     off: 0,
-    rain: 0, wind: 0, drone: 0.05,
+    rain: 0, wind: 0, drone: 0,
+
     // 进门那句不能挂在楼梯热点上——那句是在楼梯上说的。走完才说这一句。
     onArrive: () => {
       if (has('inHisBed')) return;
@@ -687,7 +688,9 @@ const NODES = {
     name: '床底',
     pano: 'images/pano-underbed-v2.jpg',
     off: 0,
-    rain: 0, wind: 0, drone: 0.14,          // 无窗无雨，只剩心跳那种低频压得更重
+    // 全游戏唯一还留着低频嗡鸣的房间：床底下没有窗、听不见雨，那点压在耳朵里的低频
+    // 是她自己的心跳，属于这一场。别的房间一律 drone: 0（开场只有雨）。
+    rain: 0, wind: 0, drone: 0.14,
     onArrive: () => underBedBeat(),
     spots: [
       {u:0.350, v:0.500, label:'爬出去', id:'crawlout', action:'crawlout',
@@ -702,7 +705,7 @@ const NODES = {
     name: '隔壁 · 楼下',
     pano: PANO_ND_LIVING,
     off: 0,
-    rain: 0, wind: 0.04, drone: 0.06,
+    rain: 0, wind: 0.04, drone: 0,
     spots: [
       {u:0.425, v:0.834, label:'纸箱', id:'ndkeys',
        text:'一个纸箱，上面搁着两把钥匙。中介说得很轻松：上一个房客走得急。'},
@@ -719,7 +722,7 @@ const NODES = {
     name: '隔壁 · 卧室',
     pano: PANO_ND_BED,
     off: 0,
-    rain: 0, wind: 0.03, drone: 0.08,
+    rain: 0, wind: 0.03, drone: 0,
     onArrive: () => ndBedArrive(),
     spots: [
       // 同一个位置上三个热点接力：先是"那面墙"，看过之后变成"那个凹坑"，钻通之后变成"那个洞"
@@ -922,7 +925,9 @@ function applyAudioProfile() {                      // 每个房间的声音底�
   // 这段录音本身很轻（平均 -33dB），所以 rain 值比合成噪声时代大得多才听得见
   // 白天雨已经停了，只剩房间自己的低频嗡鸣
   ramp(rainGain.gain, (n.rain ?? 0.4) * (n.off ? 1.3 : 1) * duck * (S.day ? 0 : 1));
-  ramp(droneGain.gain, (n.drone ?? 0.05) * (n.off ? 1.9 : 1) * duck * (S.day ? 0.5 : 1));
+  // 默认值必须是 0：没写 drone 的房间不该自己嗡起来（以前默认 0.05，
+  // 于是从开场第一秒就有一层 51Hz 的隆隆声，听着像设备噪音而不是气氛）
+  ramp(droneGain.gain, (n.drone ?? 0) * (n.off ? 1.9 : 1) * duck * (S.day ? 0.5 : 1));
   ramp(windGain.gain, (n.wind ?? 0) * duck);            // 只有户外那一节点有风
   // 走出客厅后电视还在响，只是隔了一道墙
   // 那台电视只在她自己那套房子里响。出了防盗门（门外/他家）就该听不见了，
