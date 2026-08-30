@@ -148,6 +148,13 @@
   #photos .nav:disabled{opacity:.22;cursor:default;background:rgba(12,12,14,.4)}
   #photos img{max-width:86%;max-height:78%;box-shadow:0 0 70px #000;
               filter:contrast(1.04) saturate(.92)}
+  /* 换图那几秒：旧的那张压暗留在原位，中间一行"载入中"。
+     以前是直接改 src，图没到之前就是一个空框——满屏黑，看着像坏了。 */
+  #photos img.wait{opacity:.1}
+  #photos .load{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+                font-size:13px;color:#8f8f96;letter-spacing:.1em;display:none;
+                text-shadow:0 0 10px #000}
+  #photos.busy .load{display:block}
   #photos .cap{position:absolute;left:50%;bottom:5%;transform:translateX(-50%);
                max-width:min(700px,88%);text-align:center;font-size:15px;line-height:1.95;
                color:#ddd;text-shadow:0 0 8px #000;letter-spacing:.02em}
@@ -364,7 +371,7 @@
 <div id="dark"></div>
 <div id="story"></div>
 <div id="pick"></div>
-<div id="photos"><img alt=""><div class="cap"></div><div class="idx"></div>
+<div id="photos"><img alt=""><div class="cap"></div><div class="idx"></div><div class="load">载入中…</div>
   <button class="nav prev" type="button" aria-label="上一张">&#8249;</button>
   <button class="nav next" type="button" aria-label="下一张">&#8250;</button>
   <button class="close" type="button" aria-label="退出">&#10005;</button>
@@ -3446,11 +3453,45 @@ const PHOTOS = [{
     : '一整面墙。你数不清有多少张，但全是同一个人——你已经分手的那个人。开头那几张里两个人都在笑，越往后他越不知道自己在被拍。有几张旁边还多了一个人，那个人的脸被涂掉了。',
 }].concat(ORDER.map(([n, t]) => ({src: `images/ex-${String(n).padStart(2, '0')}.jpg`, text: t})));
 let photoIdx = -1;
+// 照片墙跟贴片是同一个毛病：直接改 <img> 的 src，图没到之前那一块就是空的
+//（这些照片一张一二百 K，翻页翻得比预取快就会空好几秒，看着像图坏了）。
+// 所以先在后台把图取到再换上去：中间把旧那张压暗留在原位、加一行"载入中"；
+// 真取不到就说清楚"翻下一张"，而不是留一块黑。
+const photoImg = photosEl.querySelector('img');
+const photoLoad = photosEl.querySelector('.load');
+let wallSeq = 0;
+function setPhoto(src) {
+  const seq = ++wallSeq;
+  const im = new Image();
+  im.src = src;
+  if (im.complete) {                    // 已经在缓存里（预取命中）：直接换，不闪那一下
+    photoImg.src = src;
+    photosEl.classList.remove('busy');
+    photoImg.classList.remove('wait');
+    return;
+  }
+  photoLoad.textContent = '载入中…';
+  photosEl.classList.add('busy');
+  if (photoImg.src) photoImg.classList.add('wait');
+  im.onload = () => {
+    if (seq !== wallSeq) return;
+    photoImg.src = src;
+    photosEl.classList.remove('busy');
+    photoImg.classList.remove('wait');
+  };
+  im.onerror = () => {
+    if (seq !== wallSeq) return;
+    photoLoad.textContent = '这张没载出来，翻下一张';
+  };
+}
 function showPhoto(i) {
   const was = photoIdx;
   photoIdx = i;
   if (i >= 0) setPhone(false);                   // 看照片墙的时候手自然垂下去
   if (i < 0) {                                   // 看完了，收回来
+    wallSeq++;                                   // 还在路上的那张作废，别等收了之后再冒出来
+    photosEl.classList.remove('busy');
+    photoImg.classList.remove('wait');
     photosEl.classList.remove('on');
     setTimeout(() => { if (photoIdx < 0) photosEl.style.display = 'none'; }, 320);
     say('你退开半步。墙还在那儿，安静得像在等你再看一遍。', 4000);
@@ -3462,7 +3503,7 @@ function showPhoto(i) {
     document.exitPointerLock?.();
   }
   const p = PHOTOS[i];
-  photosEl.querySelector('img').src = p.src;
+  setPhoto(p.src);
   photosEl.querySelector('.cap').textContent = typeof p.text === 'function' ? p.text() : p.text;
   const act = i > 0 ? `${ACTS[i - 1]}   ` : '';   // 第 0 张是整面墙，不属于任何一幕
   photosEl.querySelector('.idx').textContent =
