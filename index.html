@@ -1720,6 +1720,9 @@ enterEl.addEventListener('click', () => {
   // 那摞图没人替他们拉。
   warmPanos();
   preloadPlates(has('ch2') ? PRELOAD_CH2 : PRELOAD_CH1);
+  // 照片墙不属于进入前的门槛，但进入第一场景后就马上后台预热。
+  // 这样它不会拖慢开场，同时玩家走到照片墙时，ex-01…这一组已经在浏览器缓存里。
+  warmPhotoWall();
 
   if (TOUCH) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
@@ -3769,6 +3772,21 @@ let photoIdx = -1;
 const photoImg = photosEl.querySelector('img');
 const photoLoad = photosEl.querySelector('.load');
 let wallSeq = 0;
+let wallWarmP = null;
+function warmPhotoWall() {
+  if (wallWarmP) return wallWarmP;
+  // 第一张整墙也算进去；其余照片按顺序下载，避免和刚进入场景的全景图抢带宽。
+  wallWarmP = (async () => {
+    for (const p of PHOTOS) {
+      await new Promise(resolve => {
+        const im = new Image();
+        im.onload = im.onerror = () => resolve();
+        im.src = p.src;
+      });
+    }
+  })();
+  return wallWarmP;
+}
 function setPhoto(src) {
   const seq = ++wallSeq;
   const im = new Image();
