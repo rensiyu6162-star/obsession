@@ -1550,16 +1550,29 @@ function ringTexture() {
   return new THREE.CanvasTexture(c);
 }
 const ring = ringTexture();
-let marks = [];
+// 命中判定用一张更大的隐形精灵，视觉上那个圈还是原来的大小。
+// 原因：3 米远的 0.15m 精灵在屏幕上只有二十几个像素，鼠标要瞄、手指更打不着；
+// 可把圈本身画大又难看（一屋子大白圈）。所以拆成两份——marks 管画面，hitMarks 管点击。
+const HIT_K = 2.6;
+let marks = [], hitMarks = [];
 function buildSpots(n) {
   for (const s of marks) { scene.remove(s); s.material.dispose(); s.userData.el.remove(); }
+  for (const s of hitMarks) { scene.remove(s); s.material.dispose(); }
+  hitMarks = [];
   marks = NODES[n].spots.filter(h => !h.if || h.if()).map(h => {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({map: ring, transparent: true, depthTest: false}));
     s.position.copy(onWall(h.u, h.v));
-    s.scale.setScalar(h.size || (h.to ? 0.20 : 0.15));   // 单位是米：门给大一点，
-                                                          // h.size 是逐个热点的覆盖值
+    const r = h.size || (h.to ? 0.20 : 0.15);            // 单位是米：门给大一点，
+    s.scale.setScalar(r);                                 // h.size 是逐个热点的覆盖值
     s.userData = h;
     scene.add(s);
+    const hit = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: ring, transparent: true, opacity: 0, depthTest: false}));
+    hit.position.copy(s.position);
+    hit.scale.setScalar(r * HIT_K);
+    hit.userData = h;
+    scene.add(hit);
+    hitMarks.push(hit);
     const el = document.createElement('div');
     el.className = 'label' + (h.to ? ' go' : '');
     el.textContent = h.label + (h.id && S.seen[h.id] ? ' ·' : '');   // 看过的加个点
@@ -2270,20 +2283,47 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyF' && photoIdx < 0 && !walking) togglePhone();
 });
 
-// 屏幕坐标拾取。手机上手指没有准星那么准，热点精灵在画面里也就三四十像素，
-// 所以正中打不着就在周围一圈（半径约 18px）再各打一发，命中就算。
-// 桌面上（Esc 解锁之后用鼠标点）只打正中那一发，不放宽——鼠标本来就准。
-const PICK_RING = [[0, 0], [18, 0], [-18, 0], [0, 18], [0, -18],
-                   [13, 13], [-13, 13], [13, -13], [-13, -13]];
-function pickScreen(x, y) {
-  const ring = TOUCH ? PICK_RING : [[0, 0]];
-  for (const [dx, dy] of ring) {
-    ndc.set((x + dx) / vW() * 2 - 1, -((y + dy) / vH()) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    const h = ray.intersectObjects(marks)[0];
-    if (h) return h;
+// 屏幕坐标拾取。除了那张放大的隐形判定精灵（见 buildSpots 的 hitMarks），
+// 这里再多给一层容差：正中打不着就沿两圈偏移各打一发。
+// 手机上圈更大（手指没有准星准，还会被自己的手指挡住），鼠标也给一圈小的——
+// 桌面上按 Esc 之后是用鼠标点的，热点在画面里也就那么大一点。
+// 半径按窗口短边算，小窗口/手机上不会显得过分。
+const PICK_DIRS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
+                   [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+function pickRing() {
+  const base = Math.max(16, Math.min(vW(), vH()) * (TOUCH ? 0.065 : 0.035));
+  const out = [];
+  for (const k of [0, 1, 0.55]) {
+    for (const [dx, dy] of (k === 0 ? [[0, 0]] : PICK_DIRS)) {
+      if (k !== 0 && dx === 0 && dy === 0) continue;
+      out.push([dx * base * k, dy * base * k]);
+    }
+  }
+  return out;
+}
+// 标签是画在圈上方的（translate(-50%,-140%)），手指自然会去点那几个字。
+// 所以把标签自己的矩形也算成可点区域：坐标用 style.left/top 而不是 getBoundingClientRect，
+// 因为软件横屏时 body 整个被 rotate 过，rect 是物理坐标、这里要的是虚拟坐标。
+function labelHit(x, y) {
+  for (const s of marks) {
+    const el = s.userData.el;
+    if (el.style.display !== 'block') continue;
+    const cx = parseFloat(el.style.left), cy = parseFloat(el.style.top);
+    if (!isFinite(cx) || !isFinite(cy)) continue;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const l = cx - w / 2 - 8, t = cy - h * 1.4 - 6;
+    if (x >= l && x <= l + w + 16 && y >= t && y <= t + h + 12) return {object: s};
   }
   return null;
+}
+function pickScreen(x, y) {
+  for (const [dx, dy] of pickRing()) {
+    ndc.set((x + dx) / vW() * 2 - 1, -((y + dy) / vH()) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const h = ray.intersectObjects(hitMarks)[0];
+    if (h) return h;
+  }
+  return labelHit(x, y);
 }
 app.addEventListener('click', e => {
   // 手机上刚才那一下其实是在转视角（松手浏览器照样补一个 click），不能算点击
@@ -2301,7 +2341,7 @@ app.addEventListener('click', e => {
     if (locked) {
       ndc.set(0, 0);
       ray.setFromCamera(ndc, camera);
-      hit = ray.intersectObjects(marks)[0] || null;
+      hit = ray.intersectObjects(hitMarks)[0] || null;
     } else {
       hit = pickScreen(vx(e), vy(e));
     }
@@ -3853,7 +3893,7 @@ function frame() {
   crossEl.style.display = aimOn ? '' : 'none';
   if (aimOn && !walking) {                       // 准星对上可交互物体就亮起来
     ray.setFromCamera(ndc.set(0, 0), camera);
-    crossEl.classList.toggle('hot', ray.intersectObjects(marks).length > 0);
+    crossEl.classList.toggle('hot', ray.intersectObjects(hitMarks).length > 0);
   } else {
     crossEl.classList.remove('hot');
   }
