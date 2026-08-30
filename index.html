@@ -1618,7 +1618,9 @@ enterEl.addEventListener('click', () => {
   initAudio();
   AC?.resume();
   resumeStuck();                                     // 读档落在演出中间：补跑那一段
-  preloadPlates(PRELOAD_CH1);                        // 到这一下才开始排队预热贴片
+  // 到这一下才开始排队预热贴片。读档回到第二章的话预热第二章那一摞——
+  // chapter2Start() 不会再跑第二遍，那摞图没人替他们拉。
+  preloadPlates(has('ch2') ? PRELOAD_CH2 : PRELOAD_CH1);
 
   if (TOUCH) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
@@ -2544,16 +2546,43 @@ const PRELOAD_CH1 = [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
                      PLATE_CHOKE, PLATE_FLOOR, PLATE_AFTER, PLATE_CEILING,
                      PLATE_TOLET, PLATE_NEWS,
                      PLATE_FEET, PLATE_BUCKLE, PLATE_LEAVE];
+// 第二章那一摞。以前只写在 chapter2Start() 里，可那个函数对读档回来的人是直接 return 的
+// （if (has('ch2')) return），于是"存档落在第二章"的玩家一张都没预热——每张贴片都得现拉。
+// 提出来当常量，点"进入"那一下按章节挑一摞（见 enterEl 那个 handler）。
+const PRELOAD_CH2 = [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
+                     PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
+                     PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING];
 
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
 const darkOff = () => darkEl.classList.remove('on');
+// 贴片要等图真的到了再淡入。#plate 是铺满全屏的 <img>，CSS 里自带 background:#000，
+// 所以 .on 一加上就先铺一层纯黑：图还在路上的那几秒，屏幕上就是一整屏黑加一行字幕——
+// 看着就是"这张怎么没图"。（第二章那张 invite-photo 有 218KB，前面还排着十张预载，
+// 窄带宽下这个窗口能拖到好几秒。）载入失败同理：宁可让玩家继续看着房间，也不要一块黑板。
+// plateSeq 是防串台的：图回来得晚，而这期间已经换了下一张或者收了片，这一次就作废。
+let plateSeq = 0;
 function showPlate([src, pos]) {
-  plateEl.src = src;
-  plateEl.style.objectPosition = pos;
-  plateEl.classList.add('on');
+  const seq = ++plateSeq;
+  const apply = url => {
+    if (seq !== plateSeq) return;
+    plateEl.src = url;
+    plateEl.style.objectPosition = pos;
+    plateEl.classList.add('on');
+  };
+  const load = (url, retry) => {
+    const im = new Image();
+    im.onload = () => apply(url);
+    im.onerror = () => {
+      if (seq !== plateSeq) return;
+      if (retry) load(src + '?r=' + retry, 0);
+      else console.warn('贴片载入失败，这一拍不铺黑底：' + src);
+    };
+    im.src = url;
+  };
+  load(src, 1);
 }
-const hidePlate = () => plateEl.classList.remove('on');
+const hidePlate = () => { plateSeq++; plateEl.classList.remove('on'); };
 async function hedgeBeat() {
   if (hedgeRunning || has('heLeft') || node !== 'outside') return;
   hedgeRunning = true;
@@ -2824,9 +2853,7 @@ async function chapter2Start() {
   mark('ch2');
   // 这一章的贴片到这时候才预加载：开局就压进去十张图没必要，走到这儿再拉，
   // 而且一张一张排队（见 preloadPlates），别跟当前场景抢带宽
-  preloadPlates([PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
-                 PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
-                 PLATE_BOX, PLATE_CLAIRE2, PLATE_MISSING]);
+  preloadPlates(PRELOAD_CH2);
 
   voxLoad('drill');
   voxLoad('breath');            // "现在就钻"那一支偷看时要用，先解码好
