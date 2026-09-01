@@ -4051,8 +4051,11 @@ async function guAfterFeed() {
        f: () => showPlate(PLATE_GU_TOOTH_BASIN)},
       {t: '你把它捏在掌心。手机同时亮起来——他问你为什么不回消息。', d: 6.8,
        f: () => showPlate(PLATE_GU_TOOTH_HAND)},
+      {t: '你伸舌头去碰那颗松动的牙。左半边先失去冷热，像被一小块蜡封住了。',
+       d: 7.2, f: () => { S.dread += 3; blip('note'); }},
       {t: '你想不起来没遇见他之前的自己是什么样子。只记得他球鞋的尺码。', d: 6.4, f: hidePlate},
     ]);
+    mark('guBodyEarly');
   } else if (n === 3 && !has('guSarahCall')) {
     mark('guSarahCall');
     await sleep(700);
@@ -4064,7 +4067,61 @@ async function guAfterFeed() {
        f: () => showPlate(PLATE_GU_SKIN)},
       {t: 'Jude 从背后抱住你。他抱得很紧，像怕你会从身体里面消失。', d: 7.8,
        f: () => showPlate(PLATE_GU_EMBRACE)},
+      {t: '他松开手的时候，你听见罐子里传出很轻的咀嚼声。一下，又一下。', d: 7.2,
+       f: () => { S.dread += 4; blip('sting'); }},
+      {t: '你问他听见没有。他把你的手按回胸口：别管它，先听我。', d: 6.8},
+      {t: '他的掌心离开以后，胸腔深处又响了一下心跳。不是你的那一下。',
+       d: 7.6, f: () => { S.dread += 4; }},
       {who: 'Jude', t: '「你少一点也没关系。只要你还在我这里。」', d: 6.0, f: hidePlate},
+    ]);
+    mark('guBodyEarly');
+  }
+  // 旧版本只写到前三夜；旧档在这里补演缺失的身体和声音变化。
+  if (n >= 3 && !has('guBodyEarly')) {
+    mark('guBodyEarly');
+    await callScene([
+      {t: '你伸舌头去碰那颗松动的牙。左半边已经分不出冷和热，像被蜡封住了。', d: 7.2,
+       f: () => { S.dread += 3; }},
+      {t: '罐子里传出很轻的咀嚼声。一下，又一下。你捂住耳朵，它还在身体里面响。',
+       d: 8.0, f: () => { S.dread += 4; blip('sting'); }},
+      {t: 'Jude 把你的手按在胸口。你听见两个心跳，其中一个不属于你。', d: 8.0,
+       f: () => { S.dread += 4; showPlate(PLATE_GU_SKIN); }},
+      {t: '他低声说：别管它，先听我。', d: 5.4, f: hidePlate},
+    ]);
+  }
+  if (n === 4 && !has('guBody4')) {
+    mark('guBody4');
+    await callScene([
+      {t: '第四夜。枕头上粘着一撮头发。你捻起发根，发现上面带着一点湿白的东西。',
+       d: 7.8, f: () => { S.dread += 4; }},
+      {t: '你去剪指甲，拇指的甲面从中间裂开。裂缝里没有血，只有细细的灰。',
+       d: 8.0, f: () => showPlate(PLATE_GU_TOOTH_HAND)},
+      {t: 'Jude 发来语音。他说他在门外。你没有告诉他，门缝下已经伸进来一根发丝。',
+       d: 8.2, f: hidePlate},
+    ]);
+  } else if (n === 5 && !has('guBody5')) {
+    mark('guBody5');
+    await callScene([
+      {t: '第五夜。你发现自己怕光。窗帘一拉开，皮肤下面的东西就开始往阴影里缩。',
+       d: 7.8, f: () => { S.dread += 4; }},
+      {t: '你想把这件事写下来，落笔却漏掉了三个字。再看时，连你为什么要写也忘了。',
+       d: 8.4},
+      {t: '罐子里忽然传出你的声音：再给一点。他在门外答应你，说马上就来。',
+       d: 8.6, f: () => { S.dread += 5; blip('ring'); }},
+      {t: '你低头看见手指甲缝里的灰，突然想不起 Sarah 的脸。', d: 7.0, f: hidePlate},
+    ]);
+  } else if (n === 6 && !has('guBody6')) {
+    mark('guBody6');
+    await callScene([
+      {t: '第六夜。你掉了一颗臼齿。Jude 把它从洗手池里捡起来，放进一只透明的小盒子。',
+       d: 8.4, f: () => { S.dread += 5; showPlate(PLATE_GU_TOOTH_BASIN); }},
+      {t: '盒子里已经有三颗了。他说要替你保管，因为你以后可能会忘记它们属于你。',
+       d: 8.0},
+      {t: '你摸到手腕上的皮肤在跳。罐子的声音、他的声音、你的声音，已经分不清了。',
+       d: 8.0, f: () => { S.dread += 6; showPlate(PLATE_GU_SKIN); }},
+      {t: '他把外套扣子解下来，缝在罐口那道裂缝上，像给它补一张嘴。', d: 7.6,
+       f: () => showPlate(PLATE_HIM_DOOR)},
+      {t: '「再一夜，」他说，「你就不会再需要记得自己是谁了。」', d: 7.0, f: hidePlate},
     ]);
   }
   // 线索齐了：觉醒。没齐而且已经喂到第六夜：沉沦。
@@ -4350,11 +4407,36 @@ async function knotHimBeat() {
     {t: '你伸手抱他的时候，心里没有你以为会有的那种滚烫。', d: 7.6,
      f: () => { S.dread += 3; }},
   ]);
+  await knotIdentityBeat();
   await knotAfter();
 }
 // 代价：不是疼，是"少了什么"。她自己也说不清是从哪一天开始的。
+async function knotIdentityBeat() {
+  if (has('knotIdentity')) return;
+  mark('knotIdentity');
+  await callScene([
+    {t: '第一个结落下后，他删掉了通讯录里所有异性的名字。不是赌气，他说那些名字现在没有意义。',
+     d: 8.4, f: () => { S.dread += 3; }},
+    {t: '第二个结落下后，他把工作辞了。他说每天都在想你，已经没有办法把注意力分给别的事。',
+     d: 8.2, f: () => showPlate(PLATE_KNOT_WRIST)},
+    {t: '第三个结。他忘了母亲的生日。你提醒他，他看着你，像第一次听见这个词。',
+     d: 7.8, f: () => { S.dread += 4; }},
+    {t: '第四个结。他忘了自己最好的朋友。第五个结，他忘了 Claire，连这个名字曾经属于谁都想不起。',
+     d: 8.6},
+    {t: '第六个结。他在门口坐着等你。你下楼买水，只离开了六分钟，回来时他正在撞门。',
+     d: 8.4, f: () => { showPlate(PLATE_KNOT_DOOR); S.dread += 5; }},
+    {t: '第七个结。他坐到你平常坐的位置，穿上你喜欢的那件外套，开始用你的语气说话。',
+     d: 8.4},
+    {t: '第八个结。他对着镜子找自己的脸，找不到。你叫他的时候，他才回头。',
+     d: 7.8, f: () => { showPlate(PLATE_KNOT_REFLECTION); S.dread += 5; }},
+    {t: '第九个结。他张了张嘴，忘了自己的名字。你问他是谁，他只剩下一句回答。',
+     d: 7.8},
+    {who: 'Jude', t: '「我是你想要的人。」', d: 5.8, f: hidePlate},
+  ]);
+}
 async function knotNumbBeat() {
   mark('knotNumb');
+  await knotIdentityBeat();
   await callScene([
     {t: '第三天。你醒过来第一件事是确认他的消息还在。它在。你没有觉得高兴。', d: 9.0,
      f: () => showPlate(PLATE_ROPE)},
