@@ -2352,9 +2352,10 @@ let phoneUp = false;
 //   2. 看过照片墙之后才出现——引导的第三步才是"点击你手里的手机"，
 //      在那之前它出现在画面里只会抢走玩家的注意力
 //   3. 到了周六白天，看录像和打电话这两件事都做完了，收起来
-// 用途只剩那两件：放那段十五秒的录像、打那通电话。
+//   4. 打给闺蜜那条线：那通电话打完手机就收起来，别一直举在画面里
+//      （她要看的那些旧消息在卧室窗台那台手机上，是热点，不走这个挂件）
 const IN_FLAT = {living: 1, bedroom: 1, corridor: 1};
-const phoneAvail = () => !S.day && has('sawWall') && !!IN_FLAT[node];
+const phoneAvail = () => !S.day && has('sawWall') && !has('calledSarah') && !!IN_FLAT[node];
 let phoneShown = null;
 function syncPhone() {
   const on = phoneUp || phoneAvail();      // 已经举起来了就别中途抽走
@@ -2614,22 +2615,36 @@ callEl.addEventListener('click', e => {
       // 给一句字幕说明是人物不肯挂，不是按钮坏了。
       if (holdCall) { blip('note'); say('你的拇指压在红键上。没有按下去。', 3000); return; }
       blip('hangup'); setPhone(false); afterBeat();
+      return;
     }
+    skipStep();                                  // 通话里点画面＝这一句说快点（和房间里一样）
     return;
   }
   const hot = e.target.closest('.hot');
-  if (hot) doCall(hot.dataset.who);
+  if (hot) { doCall(hot.dataset.who); return; }
+  skipStep();                                    // 通讯录上点空处也能催字幕
 });
-// 那段十五秒的录像必须看完：放的时候手机放不下来（点画面、点手机、按 F 都不行），
-// 放完了才自动进通讯录——那两个号码是整条周六线的入口，中途把手机垂下去就等于
-// 把这一段跳过了，而这一段本来就是"她一次都没关掉过它"这件事本身。
-// 只有一种情况不锁：浏览器根本没让它播（play() 被拒、解码失败、没数据）。
+// 那段十五秒的录像本来是必须看完的：放的时候手机放不下来，放完才自动进通讯录——
+// 那两个号码是后面两条线的入口，中途把手机垂下去就等于把这一段跳过了，
+// 而这一段本身就是"她一次都没关掉过它"这件事。
+// 但也不能真的把人按在那儿：点第二下就是明确表态"我不想看了"，
+// 那就把剩下的收掉直接进通讯录（剧情该交代的那句字幕已经说过了）。
+// 只有一种情况本来就不锁：浏览器根本没让它播（play() 被拒、解码失败、没数据）。
 // 那时候 ended 永远不会来，锁着就把人卡在举手机的画面里了。
 const vidLocked = () => phoneUp && !phoneVid.ended && !phoneVid.paused && !phoneVid.error;
+let vidTries = 0;
 function lowerPhone() {
   if (vidLocked()) {
-    blip('note');
-    say('你的手没有放下来。这十五秒你从来没有中途关掉过。', 3200);
+    if (++vidTries < 2) {
+      blip('note');
+      say('你的手没有放下来。这十五秒你从来没有中途关掉过。（再点一下就跳过）', 3600);
+      return;
+    }
+    vidTries = 0;
+    phoneVid.pause();
+    stat('video', {id: 'phone-vid', phase: 'skip'});
+    if (!zoomOn) phoneZoom(true);
+    showCall();                        // 和放完那一下走同一个出口
     return;
   }
   setPhone(false);
@@ -2649,6 +2664,7 @@ function setPhone(up) {
   if (up) {
     phoneVid.loop = false;             // 举起来这一次只放一遍
     phoneVid.currentTime = 0;
+    vidTries = 0;                      // 每次举起来重新数那两下
     phoneVid.play().catch(() => {});
     stat('video', {id: 'phone-vid', phase: 'play'});
     // 先让手抬到位（CSS 那段 .55s），再往前推近，两段动作不要叠在一起
@@ -2745,15 +2761,18 @@ app.addEventListener('click', e => {
       hit = pickScreen(vx(e), vy(e));
     }
   }
-  // 没点到东西才算"快进到下一句"。举着手机 / 拨号界面那会儿点击另有含义
-  //（放下手机、选名字），那两种情况用空格快进。
-  if (!hit && !phoneUp && !callOn && skipStep()) return;
+  // 没点到东西就算"快进到下一句"。举着手机 / 拨号界面那会儿点击另有含义
+  //（放下手机、选名字），那两条各自在自己那儿接了 skipStep。
+  // 屏幕上盖着贴片的时候例外：那会儿玩家看不见热点，他点的一定是"这句说快点"，
+  // 所以贴片在的时候快进优先于热点（其余时候仍然是热点优先，见上面那段注释）。
+  if ((!hit || plateEl.classList.contains('on')) && !phoneUp && !callOn && skipStep()) return;
   if (walking) return;
   // 拨号界面开着：这时候只认那两个名字，点空白处不算数
   if (callOn) return;
   // 手机举着的时候画面被那段录像占满了，随便点一下就是放下手机、回到房间——
-  // 但录像放完之前放不下来（lowerPhone 里那道闸）
-  if (phoneUp) { lowerPhone(); return; }
+  // 但录像放完之前放不下来（lowerPhone 里那道闸，连点两下才跳过）。
+  // 先 skipStep 一下：举着手机的时候也在走字幕，点了就该催它。
+  if (phoneUp) { skipStep(); lowerPhone(); return; }
   if (calib) { calibClick(); return; }
   // 引导正指向手机时，准星没对上任何东西的那一下就算点手机。
   // 锁定鼠标之后 DOM 元素收不到 click（事件全给锁定目标），只能这样接。
@@ -3815,7 +3834,8 @@ async function toShopBeat() {
 let shopRunning = false;
 let shopTripping = false;
 async function shopBeat() {
-  if (shopRunning || has('shopIn')) return;
+  if (shopRunning) { skipStep(); return; }
+  if (has('shopIn')) return;
   shopRunning = true;
   mark('shopIn');
   await sleep(800);
@@ -3932,7 +3952,7 @@ const FEED_LINES = [
 ];
 let feedRunning = false;
 async function potBeat(h) {
-  if (feedRunning) return;
+  if (feedRunning) { skipStep(); return; }      // 正在演的时候再点它＝催这一句
   if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
   // 看完真相之后这个罐子只剩一件事可做：那个二选一（保留 / 摔了）
   if (has('guWake')) { await guEndChoice(true); return; }
@@ -4187,8 +4207,18 @@ async function knotTripBeat() {
   say('绳子要一缕他的头发。你知道他的梳子放在哪儿。', 5600);
 }
 // —— 二：梳子上那两缕。这一下决定整条线，所以走 askPick ——
+let combRunning = false;
 async function hairPickBeat(resume) {
   if (has('knotHair')) return;
+  if (combRunning) { skipStep(); return; }      // 演到一半再点床头柜＝催字幕，别把这一段重开
+  combRunning = true;
+  try {
+    await hairPickRun(resume);
+  } finally {
+    combRunning = false;
+  }
+}
+async function hairPickRun(resume) {
   if (resume) {
     showPlate(PLATE_COMB);
     say('梳子还搁在床头柜上。两缕头发还缠在梳齿里。', 4600);
@@ -4366,7 +4396,7 @@ async function knotAfter() {
 // 步数记在 S.knotStep 上，点下去先加再演——中途被打断顶多少看一拍，绝不会卡在原地。
 let ropeRunning = false;
 async function ropeBeat() {
-  if (ropeRunning) return;
+  if (ropeRunning) { skipStep(); return; }      // 同上：演到一半再点就是催字幕
   if (!has('knotHair')) {
     blip('note');
     say('它要一缕他的头发。得去他家——他家的门从来不锁。', 5400);
