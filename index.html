@@ -250,7 +250,9 @@
   /* 放大时把房间压暗，不然背景的墙和热点标签会一直跟这段录像抢注意力 */
   #phone-bd{position:fixed;inset:0;z-index:29;background:rgba(4,4,6,.74);
             opacity:0;pointer-events:none;transition:opacity .7s}
-  #phone-bd.on{opacity:1}
+  /* 放大手机后，手机如果有一部分被浏览器视口裁掉，暗背景仍是可点击的兜底区。
+     点手机外等价于点手机：录像阶段收手机，通话阶段催当前对白。 */
+  #phone-bd.on{opacity:1;pointer-events:auto;cursor:pointer}
   /* 录像放完之后压在放大的屏幕上的手机界面（通讯录 / 通话中）。
      三张图都是 720x1440，跟屏幕的 0.4767 比例几乎一致，所以直接铺满。
      它是独立的固定定位层，不放进 #phone——放进去会跟着 scale 一起放大，
@@ -2019,6 +2021,12 @@ function videoReady(selector = '#phone .vid', ms = 8000) {
   show(0, 0);
   gateLoad(gateList(), show).then(async () => {
     txtEl.textContent = '正在解码…';
+    // 下载完成不等于 Web Audio 已经能播放。入口直接把首幕电视歌解码完，
+    // 点击进入时只负责 resume，避免玩家进来后还要等一遍解码。
+    if (node === 'living' || node === 'bedroom' || node === 'corridor') {
+      initAudio();
+      await songReady(NODES.living.tv.songs);
+    }
     // 下载完只是文件到了：全景图还要推上显存，录像还要解出第一帧。
     // 解码失败/卡住时不能让入口永远保持 wait；资源会在真正使用时继续重试。
     await Promise.race([
@@ -2432,6 +2440,13 @@ addEventListener('resize', () => { if (zoomOn) { applyZoom(); if (callOn) layout
 const callEl = document.getElementById('call');
 const callImg = callEl.querySelector('.ui');
 let callOn = false;
+// 放大后的手机超出屏幕也不能把玩家锁住：暗背景接住所有落空的点击。
+// 通讯录/通话中保留手机界面，点背景只催当前一句；录像阶段则走那套“两下跳过”。
+PH_BD.addEventListener('click', e => {
+  e.stopPropagation();
+  if (callOn) { skipStep(); return; }
+  if (phoneUp) { skipStep(); lowerPhone(); }
+});
 // 打给 Jude 的那通电话不许中途退出：红键按不下去，手机也放不下来。
 // 理由是剧情——那三句（"别打给我了" / "周六方便见一面吗" / "行。"）是整条周六线的
 // 唯一入口，挂断就没有周六，玩家也就走不到后面。打给 Sarah 的那通不锁，
@@ -4993,13 +5008,15 @@ function warmPhotoWall() {
   if (wallWarmP) return wallWarmP;
   // 第一张整墙也算进去；其余照片按顺序下载，避免和刚进入场景的全景图抢带宽。
   wallWarmP = (async () => {
-    for (const p of PHOTOS) {
-      await new Promise(resolve => {
-        const im = new Image();
-        im.onload = im.onerror = () => resolve();
-        im.src = p.src;
-      });
-    }
+    // 每批并行，避免一张一张排队导致玩家走到照片墙时仍在等；
+    // 又不一次性开 49 个请求，给当前房间和剧情贴片留带宽。
+    const loadOne = p => new Promise(resolve => {
+      const im = new Image();
+      im.onload = im.onerror = () => resolve();
+      im.src = p.src;
+    });
+    for (let i = 0; i < PHOTOS.length; i += 8)
+      await Promise.all(PHOTOS.slice(i, i + 8).map(loadOne));
   })();
   return wallWarmP;
 }
