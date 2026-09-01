@@ -2752,10 +2752,11 @@ app.addEventListener('click', e => {
     nextPhoto();
     return;
   }
+  // 只要确实有一句剧情在走，所有画面点击都先推进这句。
+  // 第一次点热点启动演出时 stepSkip 还没有挂上，不受影响。
+  if (!phoneUp && !callOn && skipStep()) return;
   // 先算这一下有没有点在热点上（锁定时用屏幕中心的准星拾取，这就是 FPS 的交互方式）。
-  // 顺序很重要：**热点优先于"快进字幕"**。
-  // 之前是反的——只要有字幕在走，任何点击都先被当成快进吃掉。上一段演出的字幕
-  // 还剩十几秒时走到下一个房间，头两三下点热点就全被吞了，看着就是"点了没反应"。
+  // 没有正在播放的剧情时，才进入热点拾取。
   let hit = null;
   if (!walking && !calib && !phoneUp && !callOn) {
     if (locked) {
@@ -2766,14 +2767,10 @@ app.addEventListener('click', e => {
       hit = pickScreen(vx(e), vy(e));
     }
   }
-  // 没点到东西就算"快进到下一句"。举着手机 / 拨号界面那会儿点击另有含义
-  //（放下手机、选名字），那两条各自在自己那儿接了 skipStep。
-  // 屏幕上盖着贴片的时候例外：那会儿玩家看不见热点，他点的一定是"这句说快点"，
-  // 所以贴片在的时候快进优先于热点（其余时候仍然是热点优先，见上面那段注释）。
-  if ((!hit || plateEl.classList.contains('on')) && !phoneUp && !callOn && skipStep()) return;
   if (walking) return;
-  // 拨号界面开着：这时候只认那两个名字，点空白处不算数
-  if (callOn) return;
+  // 拨号界面开着：名字热点由 callEl 自己派电话；手机外的空白处也算催字幕。
+  // 之前这里直接 return，导致玩家点手机边缘、桌面空白或画面其它位置都像没反应。
+  if (callOn) { skipStep(); return; }
   // 手机举着的时候画面被那段录像占满了，随便点一下就是放下手机、回到房间——
   // 但录像放完之前放不下来（lowerPhone 里那道闸，连点两下才跳过）。
   // 先 skipStep 一下：举着手机的时候也在走字幕，点了就该催它。
