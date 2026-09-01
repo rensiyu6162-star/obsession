@@ -116,6 +116,16 @@
   #enter.back{z-index:9;background:rgba(0,0,0,.5);font-size:15px}
   /* 第一间屋子的全景图还在下载/解码：这层先不接受点击，免得点进去看见一片黑 */
   #enter.wait{cursor:progress;color:#8b8b90}
+  /* 致命错误层：WebGL 起不来、显卡上下文丢了这类"黑屏但游戏还活着"的情况，
+     与其让玩家对着一屏黑猜，不如把原因说人话讲出来。z-index 60 压过所有面板。 */
+  #fatal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+         background:rgba(0,0,0,.88);text-align:center;padding:0 24px;
+         font-size:16px;line-height:1.9;color:#ddd;letter-spacing:.02em}
+  #fatal.on{display:flex}
+  #fatal span{display:block;margin:12px 0 0;font-size:13px;color:#999;line-height:1.8}
+  #fatal button{margin-top:20px;font:13px inherit;color:#ddd;background:#1e1e20;
+                border:1px solid #444;border-radius:4px;padding:8px 18px;cursor:pointer}
+  #fatal button:hover{background:#2a2a2c}
   /* 首屏进度条。按真实下载字节走（见 gateLoad），不是假动画 */
   #load{position:fixed;left:50%;bottom:24%;transform:translateX(-50%);z-index:31;
         width:min(340px,62%);display:none;text-align:center}
@@ -434,6 +444,7 @@
 </div>
 <div id="ending"><h2></h2><p></p><button id="end-btn" type="button">再走一遍</button></div>
 <div id="flash"></div>
+<div id="fatal"></div>
 <img id="plate" alt="">
 <video id="outvid" src="images/out-saturday.mp4" playsinline preload="none"></video>
 
@@ -441,6 +452,31 @@
 
 
 
+<script>
+// 挂在模块脚本之前：要是模块本身没跑起来（比如 three.js 没取到），模块里的钩子
+// 一个都注册不上，只有这份早先就位的才看得见现场。异常 / 资源加载失败匿名上报，
+// 节流一场最多 6 条，失败静默——绝不因为统计把游戏绊倒。
+(function () {
+  var sid = '';
+  try { sid = localStorage.getItem('chimi.stat.sid') || ''; } catch (e) {}
+  var n = 0;
+  var hook = function (msg) {
+    if (n++ >= 6) return;
+    try { fetch('/stats/event', {method: 'POST', keepalive: true,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({event: 'js_error', sid: sid, node: '',
+        data: {msg: String(msg).slice(0, 160)}})}).catch(function () {}); } catch (e) {}
+  };
+  addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href)) hook('加载失败 ' + String(t.src || t.href).split('/').pop());
+    else hook((e.message || 'error') + (e.lineno ? ' @' + e.lineno : ''));
+  }, true);
+  addEventListener('unhandledrejection', function (e) {
+    hook((e.reason && e.reason.message) || 'rejection');
+  });
+})();
+</script>
 <script type="importmap">
 {"imports":{"three":"./vendor/three.module.js"}}
 </script>
@@ -475,6 +511,11 @@ const PANO_OUT_DUSK = 'images/pano-outside-dusk.jpg';
 // 一个纸箱、一台电钻、一个睡袋，这就是她搬过来的全部。空本身就是这一章的调子。
 const PANO_ND_LIVING = 'images/pano-nextdoor-living-v1.jpg';
 const PANO_ND_BED = 'images/pano-nextdoor-bed-v1.jpg';
+// ——— 闺蜜线（午夜商店）———
+// 两张新全景：午夜那条街（整条街只有一扇亮着的门，那扇门白天是一堵墙）、店里面。
+// 店里那盏布罩灯是唯一光源，所以这张图的角落是真的黑——热点都落在光够到的地方。
+const PANO_SHOP_STREET = 'images/pano-shopstreet-v1.png';
+const PANO_SHOP = 'images/pano-shop-v1.png';
 
 // 场景图：每个节点一张全景图 + 若干热点。
 // 热点坐标用平面全景图上的 u/v（u 水平 0~1 左→右，v 垂直 0~1，0 是图顶端），
@@ -498,7 +539,7 @@ const NODES = {
     tvState: 0,                        // 0 雪花（图里本来的样子） 1 播放 2 关机
     spots: [
       {u:0.595, v:0.524, label:'关灯',   action:'lamp', if: () => !S.day},
-      {u:0.955, v:0.550, label:'进卧室', to:'bedroom',  arrive:0.764, text:'门缝里透出光。你记得离开时把它关严了。'},
+      {u:0.955, v:0.550, label:'进卧室', id:'tobed', to:'bedroom',  arrive:0.764, text:'门缝里透出光。你记得离开时把它关严了。'},
       {u:0.055, v:0.520, label:'去走廊', id:'toCorridor', to:'corridor', arrive:0.493, text:'走廊尽头没有灯。你听见自己吞口水的声音。'},
       {u:0.230, v:0.530, label:'电视', id:'tv', dread:1, action:'tv'},
       {u:0.700, v:0.400, label:'照片墙', id:'wall', dread:1, action:'photos'},
@@ -513,7 +554,7 @@ const NODES = {
     rain: 0.35, drone: 0,
     spots: [
       {u:0.458, v:0.270, label:'关灯',   action:'lamp', if: () => !S.day},
-      {u:0.764, v:0.530, label:'回客厅', to:'living', arrive:0.955, text:'你退回客厅。'},
+      {u:0.764, v:0.530, label:'回客厅', id:'bedout', to:'living', arrive:0.955, text:'你退回客厅。'},
       {u:0.545, v:0.500, label:'三脚架', id:'cam', dread:2,
        text:'镜头对着床，红灯亮着。它不是你架的。',
        on: () => mark('foundCamera')},
@@ -528,6 +569,21 @@ const NODES = {
        on: () => { if (NODES.bedroom.off) mark('mirrorLit'); }},
       {u:0.099, v:0.560, label:'衣柜', id:'closet',
        text:'衣架空了三个。你只有两件外套。'},
+      // ——— 闺蜜线 · 情蛊那一支 ———
+      // 罐子摆在床头柜上（坐标照全景图量的：台灯右边那块台面 u0.423 / v0.618）。
+      // 它是这一支唯一的推进点：点一次算一夜，第二次点是把它倒过来看罐底那行字。
+      {u:0.423, v:0.618, label:'陶罐', id:'pot', action:'pot', size:0.16, dread:2,
+       if: () => has('guChosen') && has('shopDone')},
+      // 窗台上那台手机。只有"还有没翻到的东西"的时候才出现——两块线索都拿到了就收掉，
+      // 免得玩家一直去点一个只会说"你已经看过了"的热点。
+      {u:0.470, v:0.578, label:'手机', id:'guphone', action:'guphone', size:0.14, dread:1,
+       if: () => has('guChosen') && (S.guFeed || 0) >= 1 && !has('guWake')
+                 && (!has('guOldChat') || (has('guRule') && !has('guSarah')))},
+      // ——— 闺蜜线 · 九结红绳那一支 ———
+      // 绳子摊在床上（床那个热点在 u0.290，这一个往被子中间偏一点，两个不会叠）。
+      // 和罐子一样，它是这一支唯一的推进点：取头发、编九结、往后每一夜都点它。
+      {u:0.360, v:0.700, label:'那根红绳', id:'rope', action:'rope', size:0.16, dread:2,
+       if: () => has('knotChosen') && has('shopDone')},
     ],
   },
   corridor: {
@@ -537,9 +593,13 @@ const NODES = {
     off: 0,                            // 只有一支坏掉的日光灯，没有可开关的灯
     rain: 0.18, drone: 0,              // 无窗，雨声闷；以前这儿的低频嗡鸣最重，现在收掉了
     spots: [
-      {u:0.493, v:0.520, label:'回客厅', to:'living', arrive:0.055, text:'你退回客厅。'},
+      {u:0.493, v:0.520, label:'回客厅', id:'toliving', to:'living', arrive:0.055, text:'你退回客厅。'},
       {u:0.175, v:0.520, label:'防盗门', id:'door', dread:1,
-       text: () => S.day
+       text: () => has('shopNight') && !has('shopDone')
+         ? '她在楼下等你。今天晚上这五道锁你自己开。'
+         : has('knotChosen') && !has('knotHair')
+           ? '天亮了。你要去一趟他家——他家的门从来不锁。'
+           : S.day
          ? '天亮了，锁还是那五道。但今天你要出去——他说了行。'
          : has('foundCamera')
            ? '锁是新换的，五道，全从里面反锁。你没有这把钥匙。'
@@ -550,6 +610,42 @@ const NODES = {
       {u:0.953, v:0.790, label:'信件', id:'mail', dread:1,
        text:'全都没拆。收件人不是你，但住址是这里。',
        on: () => mark('otherName')},
+    ],
+  },
+  // ——— 闺蜜线：午夜那条街 ———
+  // 白天这儿是一堵墙。整条街的卷帘门都拉着，只有一扇门的玻璃后面亮着黄光，
+  // 那就是唯一能点的东西（坐标是照着全景图量的：门在 u0.483 / v0.530）。
+  shopstreet: {
+    name: '午夜的街',
+    pano: PANO_SHOP_STREET,
+    off: 0,
+    rain: 0, wind: 0.16, drone: 0,     // 雨刚停：地上是湿的，声音只剩风
+    onArrive: () => {
+      if (has('shopSeen')) return;
+      mark('shopSeen');
+      setTimeout(() => say('这条街你走过几百次。左边那家洗衣房，右边那家报刊亭，'
+                         + '中间从来没有门。', 7000), 900);
+    },
+    spots: [
+      {u:0.483, v:0.530, label:'那扇亮着的门', id:'shopdoor', to:'shop', arrive:0.5,
+       size:0.26, dread:2,
+       text:'门上没有招牌。玻璃后面那点黄光是整条街唯一亮着的东西。'},
+    ],
+  },
+  // ——— 闺蜜线：店里 ———
+  // 进来之后先把这间店演一遍（onArrive → shopBeat），演完柜台上那两样东西就位。
+  // 没有"出去"的热点：这一趟是单程，选完就走（见 shopPickBeat）。
+  shop: {
+    name: '旧货店',
+    pano: PANO_SHOP,
+    off: 0,
+    rain: 0, wind: 0.04, drone: 0,     // 屋里几乎是死的：只留一丝气流声
+    onArrive: () => shopBeat(),
+    spots: [
+      {u:0.360, v:0.560, label:'柜台', id:'counter', action:'counter', size:0.26},
+      {u:0.820, v:0.520, label:'货架', id:'shelf', action:'shelf', size:0.22},
+      {u:0.572, v:0.520, label:'后面那道布帘', id:'curtain', size:0.20,
+       text:'布帘后面是黑的。你没有听见任何呼吸的声音。'},
     ],
   },
   // 最后一段：周六，他家门外。玩家蹲在灌木丛里，隔着树叶看他进门；
@@ -677,7 +773,10 @@ const NODES = {
       setTimeout(() => say('这张床你睡过两年。靠墙那一侧是你的，你到现在还记得该往哪边翻身。', 7000), 900);
     },
     spots: [
-      {u:0.446, v:0.592, label:'那张床', id:'hairbed', action:'hair'},
+      // 闺蜜线的绳那一支也会进这间屋子，但她是专程来取一缕头发的——
+      // 那一趟不该再撞上"摸那张床"这条 Jude 线的岔路，所以那两个热点在那趟里换掉。
+      {u:0.446, v:0.592, label:'那张床', id:'hairbed', action:'hair',
+       if: () => !has('knotTrip')},
       // 楼下门一响才出现。坐标就是 v10 里被压暗的那道缝的中间
       {u:0.439, v:0.665, label:'床底', id:'underbed', action:'hideunder',
        if: () => has('coupleHome') && !has('hidUnder')},
@@ -685,7 +784,12 @@ const NODES = {
       {u:0.439, v:0.665, label:'床底', id:'underbed2', action:'ch2hide', size:0.20,
        if: () => has('ch2Back') && !has('ch2Under')},
       {u:0.549, v:0.598, label:'床头柜', id:'hisnight', dread:1,
-       text:'一盏台灯，一根黑色发圈，一对很小的金耳钉。发圈不是你的——你的头发从来不用扎。'},
+       text:'一盏台灯，一根黑色发圈，一对很小的金耳钉。发圈不是你的——你的头发从来不用扎。',
+       if: () => !has('knotTrip')},
+      // 绳那一支：同一个床头柜，这一趟她要的是搁在上面那把梳子。
+      // 坐标和上面那个完全一样，两个热点靠 if 互斥，所以不会叠在一起互相挡。
+      {u:0.549, v:0.598, label:'床头柜', id:'comb', action:'comb', size:0.18, dread:2,
+       if: () => has('knotTrip') && !has('knotHair')},
       {u:0.732, v:0.537, label:'穿衣镜', id:'hismirror', dread:1,
        text:'镜子里站着一个人，站在他的卧室中间，手里空着。你花了半秒才认出那是你。'},
       {u:0.318, v:0.505, label:'衣柜', id:'hiscloset',
@@ -797,6 +901,61 @@ const END_47 = {
       + '你在他的床底下数完了它们，然后床边的地板上落下一片影子，倒过来的一张脸伸了进来。'
       + '她没有叫。她笑了——她等这一下等了很久，因为她比你更早知道你会躲在哪里。',
 };
+// ——— 闺蜜线的七张卡 ———
+// 蛊三张、绳四张。带 next 的两张不是终局，是换章：按钮变成「继 续」，接第二章。
+const END_GU_SINK = {
+  id: 'guSink',
+  title: '换 来 的',
+  text: '你把能给的都给了它：几年的记性、走路的力气、还有你自己是谁这件事。'
+      + '他现在一步都不离开你，说的每一句都是你两年前想听的。'
+      + '可你已经想不起来当初为什么想听。罐子在枕头边上一下一下地动，'
+      + '它拿你的一生，换了一场滚烫的假的爱。',
+};
+const END_GU_BREAK = {
+  id: 'guBreak',
+  title: '梦 醒',
+  text: '陶土碎在地板上，声音比你想的小。他站在门口，眼睛慢慢清了——他全想起来了，'
+      + '包括三年前他对你做过一样的事。他说了对不起，然后像个正常人一样走出了这间屋子。'
+      + '反噬没有落在他身上。被拿走的那些没有还回来，你只是不用再往里添了。',
+};
+const END_GU_KEEP = {
+  id: 'guKeep',
+  title: '旧 的 也 要',
+  text: '你知道了全部：这只罐子三年前就用过一次，许愿的人是他，而你后来这两年，'
+      + '是他剥下来没带走的那一半。你还是把蜡按了回去。就算是旧的诅咒也好，'
+      + '至少现在他是你的。',
+  next: true,
+};
+const END_KNOT_ASH = {
+  id: 'knotAsh',
+  title: '灰',
+  text: '九个结全断了。他不再站在雨里往上看你的窗，他回到了他自己的人生里。'
+      + '绳子抽走的那些没有还给你：你看得见世间的悲欢，也知道哪一件该哭、哪一件该笑，'
+      + '可你的心像蒙了一层厚厚的灰，再也没办法真正热烈地爱任何人。',
+};
+const END_KNOT_KEEP = {
+  id: 'knotKeep',
+  title: '留 着 就 好',
+  text: '你没有剪。你把那根绳收进枕头底下，让它接着吃你剩下的那点感觉。'
+      + '他一天来三趟，你一天比一天更像一间空屋子。'
+      + '你已经不记得高兴是什么滋味了，但你记得他站在门口那个样子。',
+  next: true,
+};
+const END_KNOT_HATE = {
+  id: 'knotHate',
+  title: '她 为 你 来 的',
+  text: '九结落成的那一刻媒介就锁死了，后来打的全是死结。'
+      + '她翻遍了你的过去，记住了你的每一趟车，最后站到了你眼前——'
+      + '她脑子里全是你，一句都不提他。你许的是爱，绳子给的是恨，'
+      + '而这一次，她是专程为你来的。',
+};
+const END_KNOT_CUT = {
+  id: 'knotCut',
+  title: '都 见 过 了',
+  text: '绳索碎落在地，那份凭空生出来的滔天怨恨散了。她清醒过来，什么都记得：'
+      + '她记得自己怎么翻你的过去，怎么在便利店的玻璃外面站了半个钟头。'
+      + '恨褪了，烙印没褪。往后你们再遇见，那点被催出来的躁动还会在两个人心里潜着。',
+};
 let node = 'living';
 // ——— 存档 ———
 // 刷新不该把人踢回开头：进度写在 localStorage 里，重开页面就落回当前场景。
@@ -830,7 +989,12 @@ function save() {
     localStorage.setItem(SAVE_KEY, JSON.stringify(snapshot()));
   } catch (e) { /* 隐私模式下写不了就算了，不该因为存档挂掉游戏 */ }
 }
+// 重启 / 读档都要让页面重走一遍初始化；这两个动作的 reload 会触发
+// visibilitychange(隐藏)，而底下那个处理器会顺手 save() 把刚清掉的进度又写回来——
+// 用一个标志跳过它，否则"重新开始"永远等于没开始。
+let resetting = false;
 function restartGame() {
+  resetting = true;
   removeEventListener('beforeunload', save);       // 别在卸载的路上又把刚清掉的进度写回去
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   location.reload();
@@ -847,6 +1011,8 @@ const endEl = document.getElementById('ending');
 // 这个标记决定三件事：不再申请 Pointer Lock（手机上根本没有）、
 // 那层"点击进入"点一下就永久收掉、以及竖屏时弹劝横屏的遮罩。
 const TOUCH = matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 0;
+// 设备分档只看"主力指针是粗是细"：手机 / 电脑。不碰 UA、分辨率、IP，统计页按这个分设备数。
+stat('device', {dev: matchMedia('(pointer:coarse)').matches ? '手机' : '电脑'});
 const rotateEl = document.getElementById('rotate');
 // 软件横屏。手机开了方向锁（或者 iOS 根本不给锁方向的接口）时，
 // 屏幕转不过来，那就把整个 body 转过来：body 变成 高×宽 互换的一块，再 rotate(90deg)。
@@ -1266,9 +1432,43 @@ function tvAudio(on) {
 }
 
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
+// 致命错误层：把"起不来"的原因讲给玩家听，顺便上报统计，别让人对着黑屏猜。
+const fatal = (t, sub) => {
+  const f = document.getElementById('fatal');
+  f.innerHTML = t + '<span>' + sub + '</span>'
+    + '<button type="button" onclick="location.reload()">重新进入</button>';
+  f.classList.add('on');
+};
+// three r163 起只要 WebGL2。拿不到（硬件加速被关 / 显卡驱动被浏览器拉黑）的话
+// 下面 new WebGLRenderer 会直接抛异常、整段脚本死掉——先探一次，把话说明白。
+if (!document.createElement('canvas').getContext('webgl2')) {
+  stat('webgl_unavailable');
+  fatal('这台浏览器的 WebGL2 用不了',
+        '一般是浏览器把"硬件加速"关了：设置里搜"硬件加速"打开后重启浏览器，或换 Chrome / Edge 再试。');
+  throw new Error('webgl2 unavailable');
+}
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({antialias:true});
+} catch (e) {
+  stat('webgl_fail', {msg: String(e && e.message || e).slice(0, 120)});
+  fatal('渲染器初始化失败',
+        String(e && e.message || e).slice(0, 120) + '——试试打开硬件加速或换浏览器。');
+  throw e;
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.5 : 2));
 app.appendChild(renderer.domElement);
+// Windows 上显卡驱动重置 / 浏览器 GPU 进程崩溃会把上下文弄丢：画面瞬间全黑，
+// 声音和逻辑都还活着——不提示的话玩家只当游戏坏了。preventDefault 允许恢复。
+renderer.domElement.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  stat('webgl_lost');
+  fatal('显卡把渲染上下文弄丢了',
+        '一般是驱动或浏览器 GPU 进程抽风，多数情况下点下面重进一次就好。');
+});
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  document.getElementById('fatal').classList.remove('on');
+});
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, 1, 0.01, 100);
@@ -2050,6 +2250,41 @@ function guideDone(id) {
 // tip 是目标在视野里时显示的那句（祈使句）；what 是目标不在视野里时"往…看，找 X"里的
 // 那个 X。tip 形如"点击某物"的可以省掉 what，掐掉"点击"两个字正好就是名词。
 function guideFor(n) {
+  // ——— 闺蜜线（打给 Sarah 那条）———
+  // 这条线和 Jude 那条互斥，所以整块写在最前面，flag 一挂上就全归它管。
+  // 出门那一段：卧室/客厅 → 走廊 → 防盗门 → 街上那扇亮着的门。店里全是演出和选项，不给箭头。
+  if (has('shopNight') && !has('shopDone')) {
+    if (n === 'bedroom') return [{id: 'bedout', tip: '去客厅'}];
+    if (n === 'living') return [{id: 'toCorridor', tip: '去走廊', what: '走廊那个门口'}];
+    if (n === 'corridor') return [{id: 'door', tip: '下楼去见她', what: '防盗门'}];
+    if (n === 'shopstreet') return [{id: 'shopdoor', tip: '进那扇门', what: '亮着的那扇门'}];
+    if (n === 'shop') return [];
+  }
+  // 拿回来之后：情蛊那一支的每一夜都指着床头柜上那只罐子，别的房间先指回卧室。
+  // 手机上那两块线索是玩家自己去翻的，箭头一次都不指它们。
+  if (has('guChosen') && !has('guKeep') && !has('guBreak') && !has('guSink')) {
+    if (n === 'bedroom') return [{id: 'pot', tip: has('guWake') ? '那只罐子' : '喂它',
+                                  what: '床头柜上那只陶罐'}];
+    if (n === 'living') return [{id: 'tobed', tip: '回卧室', what: '卧室那道门'}];
+    if (n === 'corridor') return [{id: 'toliving', tip: '回客厅'}];
+  }
+  // 绳那一支：先出门去他家取一缕头发（卧室→客厅→走廊→防盗门→他床头柜），
+  // 拿到之后回自己屋里，往后每一拍都指着床上那根绳。
+  if (has('knotChosen')
+      && !has('knotKeep') && !has('knotAsh') && !has('knotHate') && !has('knotCut')) {
+    if (!has('knotHair')) {
+      if (n === 'bedroom') return [{id: 'bedout', tip: '去客厅'}];
+      if (n === 'living') return [{id: 'toCorridor', tip: '去走廊', what: '走廊那个门口'}];
+      if (n === 'corridor') return [{id: 'door', tip: '去他家', what: '防盗门'}];
+      if (n === 'hisbed') return [{id: 'comb', tip: '拿那把梳子', what: '他的床头柜'}];
+      if (n === 'hishouse') return [{id: 'hisstairs', tip: '上楼', what: '楼梯'}];
+    } else {
+      if (n === 'bedroom') return [{id: 'rope', tip: has('knotTied') ? '那根绳' : '编第一个结',
+                                    what: '床上那根红绳'}];
+      if (n === 'living') return [{id: 'tobed', tip: '回卧室', what: '卧室那道门'}];
+      if (n === 'corridor') return [{id: 'toliving', tip: '回客厅'}];
+    }
+  }
   // ——— 第二章 · 隔壁 ———
   // 这一章从搬进来到钻回他床底是一条线，中间没有任何岔路，所以指引也写成一条线：
   //   楼上 → 那面墙 → 凹坑 → 洞①② → 洞口那张照片 → 〔周二〕下楼 → 出门 →
@@ -2264,6 +2499,7 @@ async function askPick(id, ...labels) {
   S.pend = id;
   save();
   const pick = await askChoice(...labels);
+  stat('choice', {id, pick, text: String(labels[pick]).slice(0, 40)});   // 哪个二选一、选了哪边
   if (S.pend === id) { S.pend = null; save(); }
   return pick;
 }
@@ -2320,14 +2556,34 @@ async function callScene(steps) {
     sceneBusy--;
   }
 }
-// 点 Sarah 不进通话界面。闺蜜线没做，进去了就只能不声不响地断在那儿——
-// 那看着像 bug。改成留在通讯录上给一句说明，通讯录不收、Jude 还在上面等着点，
-// 玩家只能走 Jude 这条线，周六线不会被一通打不通的电话卡住。
+// 头发演出被打断（切后台）后的收尾：正常流程里"门响了"是那段演出的一部分，
+// 一旦 sceneId 变了整段作废，foundHair 已标、coupleHome 还没到，床底热点不出现。
+// 把这个收尾单独抽出来，resumeFix 和再点那张床都能幂等接回——重复触发也安全，
+// 因为 coupleHome 一标上，hair 分支和 resumeFix 就都不会再走到这里了。
+function coupleHomeArrive() {
+  if (has('coupleHome')) return;
+  callScene([
+    {t: '楼下，钥匙插进了锁孔。', d: 3.4, f: () => blip('note')},
+    {a: 'couple-home', d: 5.2, t: '门开了。是 Jude 的声音——还有一个女人在笑。'},
+    {t: '他们在门厅脱鞋。然后你听见了第一级台阶。', d: 5.4,
+     f: () => {
+       S.dread += 4;
+       mark('coupleHome');
+       applyGuide();                              // 箭头从"那张床"换成"床底"
+       buildSpots(node);                          // 床底那个热点这一刻才满足 if
+       blip('step');
+     }},
+  ]);
+}
+// 通讯录上那两个名字都能打：Jude 那条是周六线，Sarah 那条是午夜那间店。
+// 打完谁就走谁那条，另一条不会再回来（两个 beat 各自把引导换掉了）。
+// sarahWIP 只剩兜底：通讯录上再出现别的名字才会走到它。
 function sarahWIP() {
   blip('note');
-  say('——闺蜜线剧情尚在开发中，敬请期待。先打给 Jude。', 4200);
+  say('通讯录上只有这两个名字。', 3200);
 }
 function doCall(who) {
+  if (who === 'sarah') { sarahCallBeat(); return; }
   if (who !== 'jude') { sarahWIP(); return; }
   // 不收界面，换成"通话中"那张
   callEl.classList.add('calling');
@@ -2379,6 +2635,7 @@ function lowerPhone() {
   setPhone(false);
 }
 phoneVid.addEventListener('ended', () => {
+  stat('video', {id: 'phone-vid', phase: 'done'});
   if (!phoneUp) return;
   if (!zoomOn) phoneZoom(true);        // 正常流程里早就推近了，这一句只是兜底
   showCall();                          // 放完不收手机，改成给你两个号码
@@ -2393,6 +2650,7 @@ function setPhone(up) {
     phoneVid.loop = false;             // 举起来这一次只放一遍
     phoneVid.currentTime = 0;
     phoneVid.play().catch(() => {});
+    stat('video', {id: 'phone-vid', phase: 'play'});
     // 先让手抬到位（CSS 那段 .55s），再往前推近，两段动作不要叠在一起
     zoomT = setTimeout(() => { if (phoneUp) phoneZoom(true); }, 620);
   } else {
@@ -2547,7 +2805,10 @@ app.addEventListener('click', e => {
     enterNode(h.to, h);
   } else if (h.action === 'hair') {
     // 从床上捡起几根不属于她的头发。这一段没有配音，只有字幕，用 callScene 排时序。
-    if (has('foundHair')) { say('那几根头发还绕在你手指上。', 3000); return; }
+    if (has('coupleHome')) { say('那几根头发还绕在你手指上。', 3000); return; }
+    // 演出被切后台打断：foundHair 已标、coupleHome 还没到，床底热点不会出现。
+    // 再点一次这张床就把"门响了"的收尾补上（正常演出已标 coupleHome，走不到这）。
+    if (has('foundHair')) { coupleHomeArrive(); return; }
     mark('foundHair');
     S.dread += 3;
     S.seen[h.id] = true;
@@ -2607,10 +2868,40 @@ app.addEventListener('click', e => {
     peepBeat(h);
   } else if (h.action === 'ch2hide') {
     ch2Duck();
+  } else if (h.action === 'counter') {
+    // 柜台。正常流程里进店那段演出演完就自动问了；这儿是给"选项被打断"留的回头路。
+    if (!has('guChosen') && !has('knotChosen')) { shopPickBeat(true); return; }
+    say('柜台上空了。店主的手收回袖子里去了。', 3600);
+  } else if (h.action === 'shelf') {
+    if (h.id && !S.seen[h.id]) { S.seen[h.id] = true; S.dread += h.dread || 1; }
+    blip('note');
+    callScene([
+      {t: '架子上的东西都是别人拿来换的。发卡、单只的手套、剪掉一半的照片。', d: 7.2,
+       f: () => showPlate(PLATE_SHELF)},
+      {t: '换走的那些人后来都没有回来取。', d: 5.4},
+      {d: 1.4, f: hidePlate},
+    ]);
+  } else if (h.action === 'pot') {
+    // 同一只罐子的两件事：喂它，和把它倒过来看罐底。
+    // 第一夜喂完之后的那一下点击给罐底——这块线索太容易漏，漏了就只能滑向沉沦，
+    // 所以它不靠玩家自己想到"翻过来看看"，但另外两块（手机上那两处）仍然可以完全不看。
+    if (!has('guWake') && (S.guFeed || 0) >= 1 && !has('guRule')) { guRuleBeat(); return; }
+    potBeat(h);
+  } else if (h.action === 'guphone') {
+    if (h.id && !S.seen[h.id]) { S.seen[h.id] = true; S.dread += h.dread || 0; }
+    if (!has('guOldChat')) { guOldChatBeat(); return; }
+    if (has('guRule') && !has('guSarah')) { guSarahBeat(); return; }
+    say('屏幕上没有新消息。他现在不需要发消息——他就在门外。', 4200);
+  } else if (h.action === 'comb') {
+    hairPickBeat();
+  } else if (h.action === 'rope') {
+    ropeBeat();
   } else if (h.action === 'hide' && !has('heLeft')) {
     // 玩家自己躲进灌木深处，就是这段演出的开场——比干等那个 15 秒的兜底计时器好
     hedgeBeat();
-  } else if (h.id === 'door' && S.day) {
+  } else if (h.id === 'door' && (S.day
+             || (has('shopNight') && !has('shopDone'))
+             || (has('knotChosen') && !has('knotHair')))) {
     guideDone('door');
     say(typeof h.text === 'function' ? h.text() : h.text, 3000);
     setTimeout(exitDoor, 1400);                       // 先让那句台词说完，再开门
@@ -2649,6 +2940,17 @@ const flashEl = document.getElementById('flash');
 let leaving = false;
 function exitDoor() {
   if (leaving) return;
+  // 闺蜜线：这一趟是半夜下楼去见 Sarah，不放咖啡馆那段白天的录像，
+  // 也不走底下那套泛白+视频的流程——交给 toShopBeat 溶到街上去。
+  if (has('shopNight') && !has('shopDone')) {
+    if (!shopTripping) { shopTripping = true; toShopBeat(); }
+    return;
+  }
+  // 绳那一支：出这道门是去他家取一缕头发，也不走底下那套。
+  if (has('knotChosen') && !has('knotHair')) {
+    if (!knotTripping) { knotTripping = true; knotTripBeat(); }
+    return;
+  }
   leaving = true;
   walking = true;                              // 借走动状态屏蔽点击、热点和引导
   fovTarget = 90;                              // 视野往前扑，像人贴到门上
@@ -2665,6 +2967,7 @@ function exitDoor() {
     document.exitPointerLock?.();
     outVid.style.display = 'block';
     outVid.currentTime = 0;
+    stat('video', {id: 'out-saturday', phase: 'play'});
     outVid.play().catch(() => {
       // 某些浏览器把延迟后的 play 判成失去手势，重新 load 后再尝试一次。
       outVid.load();
@@ -2675,6 +2978,7 @@ function exitDoor() {
   }, 1500);
 }
 outVid?.addEventListener('ended', () => {
+  stat('video', {id: 'out-saturday', phase: 'done'});
   outVid.style.opacity = 0;
   setTimeout(() => {
     outVid.style.display = 'none';
@@ -2792,6 +3096,36 @@ const PLATE_MISSING = ['images/news-missing.jpg', '50% 50%'];
 // 第二章动手那一下。跟第一章 claire-choke 是一对镜子：那一张第一视角是"她动手"，
 // 这一张是"她被动手"——机位躺在地板上往上看，Claire 一手掐着镜头这边的脖子、一手举着刀。
 const PLATE_KNIFE = ['images/claire-knife.jpg', '50% 50%'];
+// ——— 闺蜜线的贴片 ———
+// 商店三张
+const PLATE_COUNTER = ['images/shop-counter.jpg', '50% 50%'];
+const PLATE_KEEPER = ['images/shop-keeper.jpg', '50% 50%'];
+const PLATE_SHELF = ['images/shop-shelf.jpg', '50% 50%'];
+// 蛊线十张：罐子（封着 / 开了 / 罐底那行字）、第一夜、第四夜它自己爬出来、
+// 代价（相册、洗手池）、他守在门口、罐碎、沉沦
+const PLATE_POT = ['images/pot-sealed.jpg', '50% 50%'];
+const PLATE_POT_OPEN = ['images/pot-open.jpg', '50% 50%'];
+const PLATE_POT_BOTTOM = ['images/pot-bottom.jpg', '50% 50%'];
+const PLATE_FEED = ['images/pot-feed.jpg', '50% 50%'];
+const PLATE_POT_WAIT = ['images/pot-waiting.jpg', '50% 50%'];
+const PLATE_ALBUM = ['images/album-blur.jpg', '50% 50%'];
+const PLATE_BASIN = ['images/basin-night.jpg', '50% 50%'];
+const PLATE_HIM_DOOR = ['images/him-doorway-night.jpg', '50% 30%'];
+const PLATE_POT_BROKEN = ['images/pot-broken.jpg', '50% 50%'];
+const PLATE_SINK = ['images/gu-sink-end.jpg', '50% 50%'];
+// 绳线八张：九结、绳结内层那行字、梳子上那两缕、编结的手、纸条、
+// 便利店玻璃外那个人、她整理出来的那一整桌你、剪断之后
+const PLATE_ROPE = ['images/rope-nine.jpg', '50% 50%'];
+const PLATE_ROPE_TEXT = ['images/rope-inner.jpg', '50% 50%'];
+const PLATE_COMB = ['images/comb-two-hairs.jpg', '50% 50%'];
+const PLATE_TYING = ['images/knot-tying.jpg', '50% 50%'];
+const PLATE_NOTE = ['images/claire-note.jpg', '50% 50%'];
+const PLATE_WINDOW = ['images/claire-window.jpg', '50% 50%'];
+const PLATE_DOSSIER = ['images/claire-dossier.jpg', '50% 50%'];
+const PLATE_CUT = ['images/knot-cut.jpg', '50% 50%'];
+// 两张共用：Sarah 那三条短信、他站在雨里
+const PLATE_SMS = ['images/sarah-sms.jpg', '50% 50%'];
+const PLATE_HIM_RAIN = ['images/him-outside-rain.jpg', '50% 50%'];
 // 贴片预热。以前是模块加载时一口气 new Image() 十五张——在慢网上这十五张会跟
 // 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成一张一张排队，
 // 而且等到玩家点了"进入"之后才开始（那时候第一张全景已经在解码了）。
@@ -2816,6 +3150,15 @@ const PRELOAD_CH1 = [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
 const PRELOAD_CH2 = [PLATE_DENT, PLATE_DRILL, PLATE_PEEP1, PLATE_PEEP2, PLATE_PEEP2B,
                      PLATE_PEEPC, PLATE_INVITE, PLATE_INVITEB,
                      PLATE_BOX, PLATE_CLAIRE2, PLATE_KNIFE, PLATE_MISSING];
+// 闺蜜线那一摞。进商店那一下就开始排队（见 sarahLeaveBeat），
+// 两条支线的图都在里面——反正玩家在店里那几十秒够拉完前几张。
+const PRELOAD_SARAH = [PLATE_COUNTER, PLATE_KEEPER, PLATE_SHELF,
+                       PLATE_POT, PLATE_POT_OPEN, PLATE_POT_BOTTOM, PLATE_FEED,
+                       PLATE_POT_WAIT, PLATE_ALBUM, PLATE_BASIN, PLATE_HIM_DOOR,
+                       PLATE_SMS, PLATE_HIM_RAIN,
+                       PLATE_ROPE, PLATE_ROPE_TEXT, PLATE_COMB, PLATE_TYING,
+                       PLATE_NOTE, PLATE_WINDOW, PLATE_DOSSIER,
+                       PLATE_POT_BROKEN, PLATE_SINK, PLATE_CUT];
 
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
@@ -3406,14 +3749,723 @@ async function ch2InviteBeat() {
   buildSpots(node);
   save();
 }
-// 床底和洞口这几处是"没有任何可点的东西、全靠演出往下走"的地方。
-// 在这中间刷新页面（或者读一个存在这中间的档），热点是空的、箭头也是空的，人就真的卡住了。
+// ======================= 闺蜜线 · 午夜商店 =======================
+// 这条线是第一章的平行分支：打给 Sarah 而不是 Jude。两条大支线（蛊 / 九结绳）互斥，
+// 各有终局，其中两张卡带 next，按下去接第二章。
+// 全线的规矩：主角的脸一次都不出现；蛊那一支该见血就见血（它的恐怖在身体上），
+// 绳那一支一滴血都没有（它拿走的是"感觉"）。
+// —— 入口：那通电话 ——
+async function sarahCallBeat() {
+  if (has('calledSarah')) { say('她已经说了在楼下等你。', 3200); return; }
+  mark('calledSarah');
+  callEl.classList.add('calling', 'locked');
+  holdCall = true;
+  callImg.src = 'images/phone-ui-sarah.jpg';
+  await callScene([
+    {t: '拨出去了。响了半声就通了——她没睡。', d: 5.0, f: () => blip('ring')},
+    {who: '你', t: '「我还是放不下他。」', d: 4.6},
+    {who: '你', t: '「我知道这句话我说过很多遍了。」', d: 5.0},
+    {who: 'Sarah', t: '「你说过四十七遍。我数过。」', d: 5.6,
+     f: () => { S.dread += 3; blip('note'); }},
+    {who: '你', t: '「我不想再这样了。」', d: 4.4},
+    {who: 'Sarah', t: '「那你别在电话里说了。」', d: 4.4},
+    {who: 'Sarah', t: '「今天晚上十二点，穿件外套，我在你家楼下等你。带你去一个地方。」', d: 8.0},
+    {who: 'Sarah', t: '「你什么都不用带。你只要肯把手伸出来。」', d: 6.6,
+     f: () => { S.dread += 4; }},
+    {t: '她挂了。这一次是你把手机从耳边拿下来的。', d: 5.6},
+  ]);
+  mark('shopNight');
+  shopNightGuide();
+}
+// 电话打完就该下楼。引导两步：先去走廊，再点防盗门（文案在 guideFor 那块闺蜜线里）。
+// 这段演出被切后台或关页面打断时，resumeFix 也走这儿把引导补上，不然通讯录已经收了、
+// 箭头还指着手机，玩家会没有下一步可点。
+function shopNightGuide() {
+  if (!has('shopNight')) mark('shopNight');
+  hideCall();
+  setPhone(false);
+  applyGuide();
+  applyAudioProfile();
+  buildSpots(node);
+  save();
+}
+// —— 出门：这一趟不放咖啡馆那段录像（那是周六白天的事），直接淡进午夜的街 ——
+async function toShopBeat() {
+  walking = true;
+  document.exitPointerLock?.();
+  preloadPlates(PRELOAD_SARAH);                  // 店里那几十秒够把前几张拉完
+  loadPano(PANO_SHOP);
+  await callScene([
+    {t: '五道锁，一道一道开。楼道里的灯是坏的，你摸着扶手下去。', d: 6.4,
+     f: () => { for (let i = 0; i < 5; i++) setTimeout(() => blip('click'), 200 + i * 240); }},
+    {t: '她就站在路灯底下，没有打伞。雨已经停了。', d: 6.0},
+    {who: 'Sarah', t: '「跟着我走，别问路。这条街你认得，但今天它不一样。」', d: 7.0},
+  ]);
+  await fadePano(PANO_SHOP_STREET, 1800);
+  jumpTo('shopstreet', 0.483);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = false;
+  NODES.shopstreet.onArrive?.();
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// —— 店里：先把这间店演一遍，演完柜台上那两样东西就位 ——
+let shopRunning = false;
+let shopTripping = false;
+async function shopBeat() {
+  if (shopRunning || has('shopIn')) return;
+  shopRunning = true;
+  mark('shopIn');
+  await sleep(800);
+  await callScene([
+    {t: '屋里没有灯，只有柜台上那一盏，罩子是布做的，光落不到地上。', d: 7.4,
+     f: () => { S.dread += 3; }},
+    {t: '架子上全是别人的旧东西——发卡、单只的手套、剪掉一半的照片。'
+        + '每一样都被人用过很久，然后不要了。', d: 9.0,
+     f: () => showPlate(PLATE_SHELF)},
+    {t: '空气里是干草药的味道。闻久了嘴里发苦。', d: 6.0, f: hidePlate},
+    {who: 'Sarah', t: '「他不说话。你别看他。」', d: 5.0},
+    {t: '柜台后面那个人没有抬头。他往前推了两样东西。', d: 6.4,
+     f: () => { showPlate(PLATE_KEEPER); blip('note'); }},
+    {t: '一只封着蜡的粗陶罐子，和一根打了九个结的红绳。', d: 6.6,
+     f: () => showPlate(PLATE_COUNTER)},
+  ]);
+  shopRunning = false;
+  applyGuide();
+  buildSpots(node);
+  save();
+  await sleep(600);
+  await shopPickBeat();
+}
+// —— 柜台上那个二选一。这一下决定整条线，所以走 askPick（存档停在这儿也能续上）——
+async function shopPickBeat(resume) {
+  if (has('guChosen') || has('knotChosen')) return;
+  if (resume) {
+    // 读档回到这一问：她的那套规矩已经听过一遍了，别再让人从头听五十几秒——
+    // 摆回柜台那张贴片，说一句"店主没有催你"，直接把两个按钮放回来。
+    showPlate(PLATE_COUNTER);
+    say('柜台上还摆着那两样东西。店主没有催你。', 4600);
+    await sleep(2200);
+  } else {
+    await callScene([
+      {who: 'Sarah', t: '「两条路。」', d: 3.6},
+      {who: 'Sarah', t: '「罐子里那个，要你养。你每天给它一点你自己的东西，'
+          + '它就爬到他身上去，让他眼睛里只剩下你。」', d: 9.6},
+      {who: 'Sarah', t: '「它拿走的东西你自己挑不了。可能是记性，可能是力气，'
+          + '可能是你还记得的某一年。你给得越多，他爱得越凶。」', d: 10.4,
+       f: () => { S.dread += 4; }},
+      {who: 'Sarah', t: '「另一根是九结绳。它要一缕头发——他的，和你自己的，编进去，'
+          + '一个结许一个愿，九个结打完就成了。」', d: 10.0},
+      {who: 'Sarah', t: '「绳子只认头发是谁的。它不听你心里想的是谁。」', d: 7.0,
+       f: () => { S.dread += 3; blip('note'); }},
+      {who: '你', t: '「那你为什么带我来。」', d: 4.6},
+      {who: 'Sarah', t: '「因为我当年也站在这个柜台前面。」', d: 5.4},
+      {who: 'Sarah', t: '「我什么都不会替你选。」', d: 5.0},
+    ]);
+  }
+  const pick = await askPick('shopPick', '拿起那只陶罐', '拿起那根红绳');
+  if (pick === 0) {
+    mark('guChosen');
+    await callScene([
+      {t: '你伸手把罐子端过来。它比你想的沉。', d: 5.6,
+       f: () => { showPlate(PLATE_POT); blip('click'); }},
+      {t: '店主把那根红绳收回抽屉里，抽屉关上的声音很轻。', d: 6.4, f: hidePlate},
+    ]);
+  } else {
+    mark('knotChosen');
+    await callScene([
+      {t: '你把那根绳子拿起来，绕在手上。绳身上有旧的勒痕——它被人打过又拆过。', d: 8.0,
+       f: () => { showPlate(PLATE_ROPE); blip('click'); }},
+      {t: '店主把陶罐收回抽屉里。蜡封那道指甲印朝上。', d: 6.4, f: hidePlate},
+    ]);
+  }
+  save();
+  await sarahLeaveBeat();
+}
+// —— 出店：溶回她自己的卧室。选了绳子的还要先去他家取一缕头发，所以引导分两套 ——
+async function sarahLeaveBeat() {
+  walking = true;
+  await callScene([
+    {t: '你把它揣进外套内袋。走出门的时候，回头看了一眼——', d: 6.4},
+    {t: '那扇门后面又是一堵墙。Sarah 已经不在街上了。', d: 6.6,
+     f: () => { S.dread += 3; blip('whoosh'); }},
+  ]);
+  NODES.bedroom.off = 0;
+  await fadePano(NODES.bedroom.pano, 2000);
+  jumpTo('bedroom', 0.29);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = false;
+  mark('shopDone');
+  applyAudioProfile();
+  await sleep(700);
+  if (has('guChosen')) {
+    await callScene([
+      {t: '你回到自己的卧室，把罐子放在床头柜上。蜡封已经开了一道缝。', d: 7.6,
+       f: () => showPlate(PLATE_POT)},
+      {t: '窗外还是那场雨。屋里多了一样东西，从今天起要你每天喂它。', d: 7.4,
+       f: hidePlate},
+    ]);
+  } else {
+    await callScene([
+      {t: '你回到自己的卧室，把绳子摊在床上，数了一遍：九个结的位子，一个都没打。', d: 8.0,
+       f: () => showPlate(PLATE_ROPE)},
+      {t: '它要一缕他的头发。而他家的门，你知道从来不锁。', d: 6.8, f: hidePlate},
+    ]);
+  }
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// ——— 情蛊线 ———
+// 喂养循环：同一个热点点一次算一夜（S.guFeed）。台词一夜比一夜短，因为她越来越不当回事。
+// 第一夜见血，但只给"一滴将落"和事后的纱布，不给伤口特写、不给刀在皮肤上的动作。
+const FEED_LINES = [
+  ['你按它给你的规矩做了。这一段你不会写进任何人能看见的地方。', 7.4],
+  ['第二夜。袖口的纱布换过一次，你没记住是什么时候换的。', 6.6],
+  ['第三夜。你数不清这是第几个晚上了。罐子比第一天重。', 6.4],
+  ['第四夜。你已经不用开灯了。', 5.0],
+  ['第五夜。你把手伸过去的时候，另一只手在给他发消息。', 6.2],
+  ['第六夜。你看了看自己两只手：你还有八根手指没用过。', 6.6],
+];
+let feedRunning = false;
+async function potBeat(h) {
+  if (feedRunning) return;
+  if (h && h.id && !S.seen[h.id]) S.seen[h.id] = true;
+  // 看完真相之后这个罐子只剩一件事可做：那个二选一（保留 / 摔了）
+  if (has('guWake')) { await guEndChoice(true); return; }
+  feedRunning = true;
+  const n = S.guFeed || 0;
+  if (n === 0) {
+    await callScene([
+      {t: '蜡封是软的。你用指甲一挑就开了。', d: 5.4,
+       f: () => { showPlate(PLATE_POT); blip('click'); }},
+      {t: '罐口冒出来的味道不是草药。是铁锈，和放了很久的肉。', d: 6.8},
+      {t: '里面那只东西比你的拇指长。灰白色，一节一节，节缝里嵌着别的虫子的壳——'
+          + '它没吐出来，它留着。', d: 9.4,
+       f: () => { showPlate(PLATE_POT_OPEN); S.dread += 6; }},
+      {t: '它感觉到光了。它把前半截立起来，朝你。', d: 6.0, f: () => blip('note')},
+      {t: FEED_LINES[0][0], d: FEED_LINES[0][1],
+       f: () => { showPlate(PLATE_FEED); blip('sting'); S.dread += 6; }},
+      {t: '疼是后来才到的。先到的是困。困得像有人把你的插头拔了。', d: 7.4},
+      {t: '它喝完就缩回罐底，比刚才亮了一点。你把蜡按回去，按不严了。', d: 7.6,
+       f: hidePlate},
+      {t: '你坐在床边等天亮。你没有哭。你在想他明天会不会给你发消息。', d: 7.8,
+       f: () => { S.dread += 4; }},
+    ]);
+  } else {
+    const line = FEED_LINES[Math.min(n, FEED_LINES.length - 1)];
+    await callScene([
+      {t: line[0], d: line[1],
+       f: () => { showPlate(n >= 3 ? PLATE_POT_WAIT : PLATE_FEED); blip('sting'); S.dread += 4; }},
+      {d: 1.6, f: hidePlate},
+    ]);
+  }
+  S.guFeed = n + 1;
+  feedRunning = false;
+  save();
+  await guAfterFeed();
+}
+// 每喂完一夜之后：先给假象（他回来了），再给代价，喂到第六夜还没读懂真相就滑向沉沦。
+async function guAfterFeed() {
+  const n = S.guFeed || 0;
+  if (n === 1 && !has('guHim')) {
+    mark('guHim');
+    await sleep(900);
+    await callScene([
+      {t: '第二天他就来了。他站在你家门口，说他不知道自己这几天是怎么了。', d: 8.0,
+       f: () => showPlate(PLATE_HIM_DOOR)},
+      {who: 'Jude', t: '「我脑子里全是你。」', d: 4.6},
+      {who: 'Jude', t: '「我一刻都不想离开你。」', d: 5.0},
+      {who: 'Jude', t: '「你别关灯，我想看着你。」', d: 5.4},
+      {t: '他在你门口坐了一整夜。以前他连回你一条消息都要隔两天。', d: 8.0,
+       f: () => { S.dread += 3; }},
+      {t: '你等了两年的那句话，今天晚上他说了三遍。第三遍的时候你没有听见——'
+          + '你在想别的事。', d: 9.0, f: hidePlate},
+    ]);
+  } else if (n === 2 && !has('guCost')) {
+    mark('guCost');
+    await sleep(700);
+    await callScene([
+      {t: '他把 Claire 的号码删了。他删的时候让你看着。', d: 6.6},
+      {t: '屋里开着暖气。你穿着外套还在抖。', d: 5.6, f: () => { S.dread += 3; }},
+      {t: '早上刷牙的时候牙龈出血。你不觉得奇怪——你现在到处都在出血。', d: 7.6,
+       f: () => showPlate(PLATE_BASIN)},
+      {t: '你想不起来没遇见他之前的自己是什么样子。', d: 6.4, f: hidePlate},
+    ]);
+  } else if (n === 3 && !has('guSarahCall')) {
+    mark('guSarahCall');
+    await sleep(700);
+    await callScene([
+      {t: '手机响了一声。是 Sarah，只有一句话。', d: 5.4, f: () => blip('ring')},
+      {who: 'Sarah', t: '「一切都在变好。再给一点就够了。」', d: 6.0,
+       f: () => { S.dread += 3; }},
+    ]);
+  }
+  // 线索齐了：觉醒。没齐而且已经喂到第六夜：沉沦。
+  if (guClues() === 3) { await guWakeBeat(); return; }
+  if ((S.guFeed || 0) >= 6) { await guSinkBeat(); return; }
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+const guClues = () => ['guOldChat', 'guRule', 'guSarah'].filter(has).length;
+// 三块线索。每一块都得玩家自己去点，一块都不看就只能滑到沉沦结局。
+// 一：旧聊天记录（手机）。三年前是他在等她回消息，同样的九个字。
+async function guOldChatBeat() {
+  if (has('guOldChat')) { say('那些消息还在那儿。你已经翻过一遍了。', 3400); return; }
+  mark('guOldChat');
+  await callScene([
+    {t: '你往上翻。翻到三年前。', d: 5.0, f: () => blip('click')},
+    {t: '那时候是他在等你回消息。一晚上四十几条，你一条都没回。', d: 8.0,
+     f: () => { S.dread += 4; }},
+    {t: '他那时候也说过「我脑子里全是你」。一模一样的九个字。', d: 7.6},
+    {t: '再往上翻，有一段他删过又发回来的话：他说他觉得自己不正常，'
+        + '他说他想停下来但停不下来。', d: 9.4},
+  ]);
+  await guAfterClue();
+}
+// 二：罐底那行字。要点第二次罐子才翻得过来——最容易漏的一块。
+async function guRuleBeat() {
+  if (has('guRule')) { say('那行字还在罐底。你已经认出来了。', 3400); return; }
+  mark('guRule');
+  await callScene([
+    {t: '你把罐子倒过来。罐底刻了字，很浅，像是用指甲刻的。', d: 7.0,
+     f: () => { showPlate(PLATE_POT_BOTTOM); blip('note'); }},
+    {t: '「此蛊为循环枷锁。谁种下执念，谁终将偿还。」', d: 7.0},
+    {t: '「它不生爱，只放大人心里早就烂掉的那一块。」', d: 7.4,
+     f: () => { S.dread += 5; }},
+    {t: '你把罐子放回去的时候，手是抖的。不是因为怕——是因为你已经想到了什么。', d: 8.6,
+     f: hidePlate},
+  ]);
+  await guAfterClue();
+}
+// 三：Sarah 和店主的三条短信。前两块拿到之后才出现（她翻手机才会翻到那么下面）。
+async function guSarahBeat() {
+  if (has('guSarah')) { say('那三条短信你已经看过了。', 3200); return; }
+  mark('guSarah');
+  await callScene([
+    {t: '你在她的对话列表最底下翻到一个没有名字的号码。', d: 6.4,
+     f: () => { showPlate(PLATE_SMS); blip('click'); }},
+    {t: '「她今天来了。跟我当年一样的表情。」', d: 6.0},
+    {t: '「罐子还是那只。」', d: 5.0},
+    {t: '「我知道。让她自己养一遍。」', d: 6.4,
+     f: () => { S.dread += 6; blip('sting'); }},
+    {t: '她什么都知道。她只是想看一遍——看别人走一遍她走过的那条路。', d: 8.4,
+     f: hidePlate},
+  ]);
+  await guAfterClue();
+}
+async function guAfterClue() {
+  save();
+  if (guClues() === 3) { await guWakeBeat(); return; }
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// 觉醒。三块线索拼在一起，她终于知道自己抢回来的是什么。
+// 这三句独白是定稿，一句就是一句，不许再拆。
+async function guWakeBeat() {
+  if (has('guWake')) return;
+  mark('guWake');
+  await sleep(1200);
+  await callScene([
+    {t: '三样东西摆在一起，你终于看懂了。', d: 5.6, f: () => blip('sting')},
+    {t: '三年前是他先动的手。他用的是这只罐子，许的愿是你。', d: 8.0,
+     f: () => { S.dread += 6; }},
+    {t: '后来他受不了了。他找到了办法，把它从自己身上剥下来。', d: 7.6},
+    {t: '剥下来的东西没有消失。它留在你身上，变成了你后来这两年。', d: 8.4,
+     f: () => showPlate(PLATE_POT_OPEN)},
+    {t: '「我拼上我的记忆、我的性命，争来的这一份痴狂。」', d: 8.0},
+    {t: '「原来，全部只是很多年前，他丢掉的那一份诅咒。」', d: 8.4,
+     f: () => { S.dread += 6; }},
+    {t: '「我拼命抢夺回来的，从头到尾就不是新的爱情，只是他曾经不要的枷锁。」', d: 10.0,
+     f: hidePlate},
+  ]);
+  save();
+  await guEndChoice();
+}
+// 觉醒之后的二选一。走 askPick：存档正停在这儿也能把这一问摆回来。
+async function guEndChoice(resume) {
+  if (has('guKeep') || has('guBreak')) return;
+  if (resume) {
+    showPlate(PLATE_POT);
+    say('罐子还在床头柜上。蜡按不严了，它在里面动。', 4600);
+    await sleep(2000);
+  }
+  const pick = await askPick('guEnd', '把蜡按回去，继续喂它', '把罐子摔了');
+  if (pick === 0) {
+    mark('guKeep');
+    mark('guMark');
+    await callScene([
+      {t: '你把蜡按回去，把罐子摆正。', d: 5.4, f: () => showPlate(PLATE_POT)},
+      {t: '就算是旧的诅咒也好。至少现在他是你的。', d: 6.4,
+       f: () => { S.dread += 6; }},
+      {t: '往后的每一夜你都照做。你没有再翻过那些旧消息。', d: 7.4, f: hidePlate},
+    ]);
+    save();
+    await sleep(1000);
+    showEnding(END_GU_KEEP);
+  } else {
+    mark('guBreak');
+    await callScene([
+      {t: '你举起来的时候手是稳的。', d: 4.6},
+      {t: '陶土碎在地板上，声音比你想的小。', d: 5.4,
+       f: () => { showPlate(PLATE_POT_BROKEN); blip('sting'); }},
+      {t: '那只东西暴露在灯下。它不逃——它认得你的血，它在地板上找你的方向。', d: 8.6,
+       f: () => { S.dread += 5; }},
+      {t: '走了两步，它不动了。它离了罐子活不过几分钟。', d: 7.0},
+      {t: '它死的时候，身上那些别的虫子的壳全散了，散成一小堆灰。', d: 7.8},
+      {t: '你手上那些口子在同一刻全部开始疼。六天的疼一次到齐。', d: 8.0,
+       f: () => { S.dread += 4; }},
+      {t: '他站在门口，眼睛慢慢清了。他先是不明白，然后他全想起来了。', d: 8.6,
+       f: () => showPlate(PLATE_HIM_DOOR)},
+      {who: 'Jude', t: '「……我以前对你做过一样的事。」', d: 6.0},
+      {who: 'Jude', t: '「对不起。」', d: 4.0},
+      {t: '他说完就走了。他走得很正常——一个正常人从一间不该来的屋子里走出去。', d: 9.0,
+       f: hidePlate},
+      {t: '被拿走的没有还回来。它只是不再拿了。', d: 6.6},
+    ]);
+    save();
+    await sleep(1200);
+    showEnding(END_GU_BREAK);
+  }
+}
+// 沉沦：喂到第六夜还没读懂真相。她要到的全要到了，代价也全付了。
+async function guSinkBeat() {
+  if (has('guSink')) return;
+  mark('guSink');
+  await sleep(900);
+  await callScene([
+    {t: '他寸步不离。他把你的门锁换成了从里面拧的那种，钥匙他拿着。', d: 8.4,
+     f: () => { S.dread += 5; }},
+    {t: '你已经想不起来自己的中学在哪儿。你还记得他球鞋的尺码。', d: 8.0,
+     f: () => showPlate(PLATE_ALBUM)},
+    {t: '你躺在床上，罐子在枕头边上一下一下地动。他握着你的手，一直在说话。', d: 9.0,
+     f: () => showPlate(PLATE_SINK)},
+    {t: '他说的每一句都是你两年前想听的。', d: 6.0},
+    {t: '「我终于得到了他全部的爱。可我已经快要记不清，当初我究竟想要什么。」', d: 10.0,
+     f: () => { S.dread += 8; }},
+  ]);
+  save();
+  await sleep(1200);
+  showEnding(END_GU_SINK);
+}
+// ======================= 闺蜜线 · 九结红绳 =======================
+// 这一支一滴血都没有：它拿走的是"感觉"，所以代价永远写成"少了什么"，不写疼。
+// 分岔只在他床头柜那把梳子上——两缕头发一样的金色、一样长，只差一个直一个卷。
+// 玩家在选的那一刻不可能知道哪缕是谁的，真相要等到绳子起作用之后才由后果说出来。
+// —— 一：去他家取一缕头发 ——
+let knotTripping = false;
+async function knotTripBeat() {
+  if (has('knotTrip')) return;
+  mark('knotTrip');
+  walking = true;
+  document.exitPointerLock?.();
+  preloadPlates([PLATE_COMB, PLATE_TYING, PLATE_ROPE_TEXT]);
+  loadPano(NODES.hisbed.pano);
+  await callScene([
+    {t: '五道锁，一道一道开。天已经亮了，雨停了。', d: 6.0,
+     f: () => { for (let i = 0; i < 5; i++) setTimeout(() => blip('click'), 200 + i * 240); }},
+    {t: '他家的门从来不锁。他说过那是他家最让他安心的地方。', d: 7.0},
+    {t: '这个点他不在。你上了楼，站在你睡过两年的那间屋子中间。', d: 7.6},
+  ]);
+  NODES.hisbed.off = 0;
+  await fadePano(NODES.hisbed.pano, 2000);
+  jumpTo('hisbed', 0.446);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = false;
+  mark('inHisBed');                            // 别让这间屋子原本那句进门台词再补一遍
+  applyAudioProfile();
+  applyGuide();
+  buildSpots(node);
+  save();
+  await sleep(600);
+  say('绳子要一缕他的头发。你知道他的梳子放在哪儿。', 5600);
+}
+// —— 二：梳子上那两缕。这一下决定整条线，所以走 askPick ——
+async function hairPickBeat(resume) {
+  if (has('knotHair')) return;
+  if (resume) {
+    showPlate(PLATE_COMB);
+    say('梳子还搁在床头柜上。两缕头发还缠在梳齿里。', 4600);
+    await sleep(2200);
+  } else {
+    await callScene([
+      {t: '床头柜上那把梳子还是他一直用的那把。梳齿里缠着头发。', d: 7.4,
+       f: () => { showPlate(PLATE_COMB); blip('note'); }},
+      {t: '两缕。一样的金色，一样的长短。一缕是直的，一缕是卷的。', d: 8.0,
+       f: () => { S.dread += 3; }},
+      {t: '你把它们分开摊在台灯下面看了很久。你分不出哪一缕是谁的。', d: 8.4},
+      {t: '你只能挑一缕。', d: 4.6},
+    ]);
+  }
+  const pick = await askPick('knotHair', '拿走那缕直的', '拿走那缕卷的');
+  mark('knotHair');
+  mark(pick === 0 ? 'knotHis' : 'knotHers');
+  await callScene([
+    {t: pick === 0 ? '你捏起那缕直的，绕在指头上绕了三圈。' : '你捏起那缕卷的，绕在指头上绕了三圈。',
+     d: 6.4, f: () => blip('click')},
+    {t: '剩下那一缕你留在了梳子上。梳子摆回原来的位置，角度也摆回去了。', d: 7.6,
+     f: hidePlate},
+  ]);
+  save();
+  await knotHomeBeat();
+}
+// —— 三：回自己屋里等子时 ——
+async function knotHomeBeat() {
+  walking = true;
+  await callScene([
+    {t: '你顺原路出去，门带上的时候听见锁舌轻轻弹回去的声音——它本来就没锁。', d: 8.4},
+    {t: '回家的路上你一直把手插在口袋里，捏着那一缕。', d: 6.6},
+  ]);
+  NODES.bedroom.off = 0;
+  await fadePano(NODES.bedroom.pano, 2000);
+  jumpTo('bedroom', 0.29);
+  for (const f of fades) { scene.remove(f.mesh); f.m.dispose(); }
+  fades.length = 0;
+  walking = false;
+  applyAudioProfile();
+  await sleep(700);
+  await callScene([
+    {t: '绳子摊在床上，九个结的位子空着。离子时还有几个钟头。', d: 7.6,
+     f: () => showPlate(PLATE_ROPE)},
+    {t: '你把那一缕和自己的一缕并在一起，压在绳头下面等着。', d: 7.4, f: hidePlate},
+  ]);
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// —— 四：子时，九个结。九个结许的是同一个愿，一个字都不换 ——
+async function knotTieBeat() {
+  if (has('knotTied')) return;
+  mark('knotTied');
+  await callScene([
+    {t: '子时。屋里只留床头那一盏灯。你从绳头开始编。', d: 6.6,
+     f: () => { showPlate(PLATE_TYING); blip('note'); }},
+    {t: '第一个结。「让他只看见我。」', d: 5.0},
+    {t: '第二个结。「让他只看见我。」', d: 4.8},
+    {t: '第三个、第四个、第五个。每一个结上你都说同一句话。', d: 7.2},
+    {t: '「让他只看见我。」', d: 4.6, f: () => { S.dread += 4; }},
+    {t: '第八个结的时候你的手指开始抖。不是累——是身体里有什么东西被抽走了一点。', d: 8.8},
+    {t: '第九个结落下去的那一刻，绳子自己收紧了，比你的手劲大得多。', d: 8.0,
+     f: () => { blip('sting'); S.dread += 5; }},
+    {t: '它是凉的。它贴着你的掌心，像有脉。', d: 6.0, f: hidePlate},
+  ]);
+  save();
+  if (has('knotHis')) await knotHimBeat();
+  else await knotWindowBeat();
+}
+// ——— 绳 · 爱恋那一支（编进去的是他的头发）———
+// 夜一：他站在雨里。这一支的恐怖全在"她已经感觉不到了"上面，所以他越滚烫，字幕越冷。
+async function knotHimBeat() {
+  mark('knotHim');
+  await sleep(900);
+  await callScene([
+    {t: '第二天下午他就来了。他站在楼下的雨里，没有打伞，仰着头看你的窗。', d: 8.6,
+     f: () => showPlate(PLATE_HIM_RAIN)},
+    {t: '他在那儿站了四十分钟。你数着。', d: 5.6},
+    {t: '他上来敲门，说他一晚上没睡，说他不知道自己这是怎么了。', d: 7.8},
+    {who: 'Jude', t: '「我脑子里全是你。」', d: 4.6},
+    {who: 'Jude', t: '「你别关门，我就在这儿待着。」', d: 5.2},
+    {t: '你等了两年的那句话，今天他站在你门口说了两遍。', d: 7.4, f: hidePlate},
+    {t: '你伸手抱他的时候，心里没有你以为会有的那种滚烫。', d: 7.6,
+     f: () => { S.dread += 3; }},
+  ]);
+  await knotAfter();
+}
+// 代价：不是疼，是"少了什么"。她自己也说不清是从哪一天开始的。
+async function knotNumbBeat() {
+  mark('knotNumb');
+  await callScene([
+    {t: '第三天。你醒过来第一件事是确认他的消息还在。它在。你没有觉得高兴。', d: 9.0,
+     f: () => showPlate(PLATE_ROPE)},
+    {t: '你把这件事记下来了，因为你知道以前的你会高兴。', d: 7.0},
+    {t: '楼下有人吵架，吵得很凶。你站在窗边看了一会儿，什么感觉都没有。', d: 8.4,
+     f: () => { S.dread += 4; }},
+    {t: '他一天来三趟。你开始想，他这样是不是也挺好——反正你现在也感觉不到烦。', d: 9.0,
+     f: hidePlate},
+  ]);
+  await knotAfter();
+}
+// 真相：绳芯里那层更细的线上写着字。这一支只有这一块线索，看完就到二选一。
+async function knotRuleBeat() {
+  mark('knotRule');
+  await callScene([
+    {t: '你把最上面那个结拆开了一点。绳芯里绞着一层更细的线，上面写着字。', d: 8.4,
+     f: () => { showPlate(PLATE_ROPE_TEXT); blip('note'); }},
+    {t: '「此绳不生情。它只把执念搬过来：一头系人，一头系心。」', d: 7.6},
+    {t: '「系上的那个人，从此只看得见你。」', d: 6.4},
+    {t: '「拴住的那颗心，从此再不能为别的事跳。」', d: 7.0,
+     f: () => { S.dread += 6; }},
+    {t: '你看懂了。他眼里现在只有你，是因为你把"还能有感觉"这件事抵了进去。', d: 9.4},
+    {t: '「我要来的这份滚烫，是拿我自己还能感觉到的全部换的。」', d: 8.4,
+     f: hidePlate},
+  ]);
+  save();
+  await knotEndChoice();
+}
+// ——— 绳 · 反转那一支（编进去的是 Claire 的头发）———
+// 夜一：他没有来。来的是别人。
+async function knotWindowBeat() {
+  mark('knotWindow');
+  await sleep(900);
+  await callScene([
+    {t: '第二天他没有来。手机上一条消息都没有。', d: 6.4},
+    {t: '晚上十一点你去便利店买烟。抬头的时候，玻璃外面站着一个女人。', d: 8.4,
+     f: () => { showPlate(PLATE_WINDOW); blip('note'); }},
+    {t: '是 Claire。她不进来，也不走。她隔着那层玻璃看你，看了很久。', d: 8.4,
+     f: () => { S.dread += 5; }},
+    {t: '你付完钱出去，她已经不在了。地上留着半个没干的鞋印，冲着门。', d: 8.6,
+     f: hidePlate},
+  ]);
+  await knotAfter();
+}
+// 她整理出来的那一整桌你。
+async function knotDossierBeat() {
+  mark('knotDossier');
+  await callScene([
+    {t: '第四天你回家，门缝底下塞着一个牛皮纸袋。', d: 6.0},
+    {t: '她把你整理出来了。你哪一年搬的家、你坐哪一趟车、你几点下班。', d: 8.6,
+     f: () => { showPlate(PLATE_DOSSIER); S.dread += 5; }},
+    {t: '照片是从远处拍的，你一张都不认得。有几张里你在笑，你不记得那天为什么笑。', d: 9.4},
+    {t: '最后一页她连你母亲的名字都写对了。', d: 5.6, f: hidePlate},
+  ]);
+  await knotAfter();
+}
+// 纸条 + 真相：编进去那一缕是卷的。九个愿一个字都没错，全落在了她身上。
+async function knotNoteBeat() {
+  mark('knotNote');
+  await callScene([
+    {t: '第五天，一张纸条从门缝里塞进来。', d: 5.6,
+     f: () => { showPlate(PLATE_NOTE); blip('note'); }},
+    {t: '「我不知道我为什么会这样。我一闭上眼睛就是你。」', d: 7.4},
+    {t: '「我不恨你抢走他。我恨你不看我。」', d: 6.8,
+     f: () => { S.dread += 6; }},
+    {t: '你把那根绳翻出来，对着灯看。你终于看清了——', d: 7.0,
+     f: () => showPlate(PLATE_ROPE_TEXT)},
+    {t: '编进去那一缕是卷的。他的头发是直的。', d: 6.6,
+     f: () => { blip('sting'); S.dread += 6; }},
+    {t: '「绳子只认头发是谁的。它不听你心里想的是谁。」', d: 7.6},
+    {t: '你许的那九个愿，一个字都没错。它们全落在了她身上。', d: 8.4, f: hidePlate},
+  ]);
+  save();
+  await knotEndChoice();
+}
+// 每一夜之后：把箭头和热点摆回来，等玩家再点那根绳。
+async function knotAfter() {
+  applyGuide();
+  buildSpots(node);
+  save();
+}
+// 那根绳是这一支唯一的推进点：取头发之前点它只会提醒该去他家，
+// 编完之后每点一次往下走一拍，走完各自那两拍就到二选一。
+// 步数记在 S.knotStep 上，点下去先加再演——中途被打断顶多少看一拍，绝不会卡在原地。
+let ropeRunning = false;
+async function ropeBeat() {
+  if (ropeRunning) return;
+  if (!has('knotHair')) {
+    blip('note');
+    say('它要一缕他的头发。得去他家——他家的门从来不锁。', 5400);
+    return;
+  }
+  ropeRunning = true;
+  try {
+    if (!has('knotTied')) { await knotTieBeat(); return; }
+    const chain = has('knotHis') ? [knotNumbBeat, knotRuleBeat]
+                                 : [knotDossierBeat, knotNoteBeat];
+    const n = S.knotStep || 0;
+    if (n < chain.length) {
+      S.knotStep = n + 1;
+      save();
+      await chain[n]();
+      return;
+    }
+    await knotEndChoice(true);
+  } finally {
+    ropeRunning = false;
+  }
+}
+// 两支各自的二选一。走 askPick：存档正停在这一问上也能把它摆回来。
+async function knotEndChoice(resume) {
+  if (has('knotKeep') || has('knotAsh') || has('knotHate') || has('knotCut')) return;
+  if (resume) {
+    showPlate(PLATE_ROPE);
+    say('九个结都在。绳子在你手里，还是凉的。', 4600);
+    await sleep(2200);
+  }
+  if (has('knotHis')) {
+    const pick = await askPick('knotEndA', '把它收进枕头底下', '剪断它');
+    if (pick === 0) {
+      mark('knotKeep');
+      await callScene([
+        {t: '你把绳子塞到枕头底下，压平。', d: 5.0, f: () => showPlate(PLATE_ROPE)},
+        {t: '感觉不到就感觉不到吧。他现在一天来三趟，这一件是真的。', d: 7.6,
+         f: () => { S.dread += 6; }},
+        {t: '你躺下去的时候听见他在门外走来走去。你睡得很好。', d: 7.6, f: hidePlate},
+      ]);
+    } else {
+      mark('knotAsh');
+      await callScene([
+        {t: '你找出剪刀。手很稳——它已经拿不走更多了。', d: 6.6},
+        {t: '九个结一个一个断开。断到第五个的时候，楼下那个人抬起头，像忽然听见了什么。', d: 9.4,
+         f: () => { showPlate(PLATE_CUT); blip('sting'); }},
+        {t: '第九个结断掉，绳子软了下去，那股凉气散了。', d: 6.8},
+        {t: '他在雨里站了两秒，转身走了。他走得很正常——像一个人从一场梦里醒过来。', d: 9.0,
+         f: () => { S.dread += 4; }},
+        {t: '你回到屋里，站在原地等那份"重新有感觉"回来。它没有回来。', d: 8.6,
+         f: hidePlate},
+      ]);
+    }
+    save();
+    await sleep(1000);
+    showEnding(has('knotKeep') ? END_KNOT_KEEP : END_KNOT_ASH);
+    return;
+  }
+  const pick = await askPick('knotEndB', '再打一遍，把它系到他身上', '剪断它');
+  if (pick === 0) {
+    mark('knotHate');
+    await callScene([
+      {t: '你把九个结全拆了，重新编。这一次你换上他那一缕直的。', d: 8.0,
+       f: () => showPlate(PLATE_TYING)},
+      {t: '第一个结就打不下去。绳子在手里发僵，编出来的全是死结。', d: 8.4,
+       f: () => { blip('sting'); S.dread += 6; }},
+      {t: '九结落成那一刻媒介就锁死了。这根绳这辈子只认那一缕卷的。', d: 8.6},
+      {t: '门铃响了。你从猫眼里看出去——她站在门口，手里拎着你上礼拜丢的那把伞。', d: 9.4,
+       f: () => showPlate(PLATE_WINDOW)},
+      {t: '她笑了。她一句都没有提他。', d: 5.6, f: hidePlate},
+    ]);
+  } else {
+    mark('knotCut');
+    await callScene([
+      {t: '你找出剪刀，把那根绳剪成了很多段。', d: 6.0,
+       f: () => { showPlate(PLATE_CUT); blip('sting'); }},
+      {t: '绳索碎落在地。门外那阵脚步声停了很久，然后往楼下去了。', d: 8.2},
+      {t: '第二天她给你打了个电话。她什么都记得——记得自己怎么翻你的过去，'
+          + '怎么在便利店的玻璃外面站了半个钟头。', d: 10.0,
+       f: () => { S.dread += 5; }},
+      {t: '她哭了。她问你那到底是什么东西。你没有告诉她。', d: 8.0, f: hidePlate},
+      {t: '恨褪了。烙印没褪。', d: 5.4},
+    ]);
+  }
+  save();
+  await sleep(1000);
+  showEnding(has('knotHate') ? END_KNOT_HATE : END_KNOT_CUT);
+}
 // 所以点"进入"那一下补跑一次没做完的那一拍。只跑一次（resumed）；之后交给底下那个看门狗。
 // 待办的二选一（S.pend）优先于 flag 组合：停在选择上是最容易把人锁死的一种。
 const PEND = {
   phone:     {at: 'underbed', run: () => phoneChoice(true)},
   drill:     {at: 'ndbed',    run: () => drillChoice(true)},
   peepAfter: {at: 'ndbed',    run: () => peepAfter(true)},
+  shopPick:  {at: 'shop',     run: () => shopPickBeat(true)},
+  guEnd:     {at: 'bedroom',  run: () => guEndChoice(true)},
+  knotHair:  {at: 'hisbed',   run: () => hairPickBeat(true)},
+  knotEndA:  {at: 'bedroom',  run: () => knotEndChoice(true)},
+  knotEndB:  {at: 'bedroom',  run: () => knotEndChoice(true)},
 };
 let resumed = false;
 function resumeStuck() {
@@ -3431,6 +4483,34 @@ function resumeFix() {
   }
   if (has('killedClaire')) { showEnding(END_BEDSIDE); return true; }
   if (has('ch2Dead')) { showEnding(END_47); return true; }
+  // ——— 闺蜜线 ———
+  // 已经到结局的：把那张卡摆回来（和上面两条一样，结局本身就是终点）。
+  if (has('guSink')) { showEnding(END_GU_SINK); return true; }
+  if (has('guKeep')) { showEnding(END_GU_KEEP); return true; }
+  if (has('guBreak')) { showEnding(END_GU_BREAK); return true; }
+  if (has('knotKeep')) { showEnding(END_KNOT_KEEP); return true; }
+  if (has('knotAsh')) { showEnding(END_KNOT_ASH); return true; }
+  if (has('knotHate')) { showEnding(END_KNOT_HATE); return true; }
+  if (has('knotCut')) { showEnding(END_KNOT_CUT); return true; }
+  // 那通电话没演完就断了：通讯录已经收起来了、箭头还指着手机——补上引导，再说一句她在等。
+  if (has('calledSarah') && !has('shopNight')) {
+    shopNightGuide();
+    say('Sarah 说十二点在楼下等你。穿件外套，下去。', 5200);
+    return true;
+  }
+  // 店里断在半路：进店那段演出没演完就从头演；演完了但还没挑，就把柜台上那一问摆回来。
+  if (node === 'shop' && !has('guChosen') && !has('knotChosen')) {
+    if (!has('shopIn')) { shopBeat(); return true; }
+    shopPickBeat(true);
+    return true;
+  }
+  // 觉醒那一段之后停在二选一上（S.pend 那条已经先兜了一层，这儿管"连 pend 都没写下去"的档）
+  if (node === 'bedroom' && has('guWake')) { guEndChoice(true); return true; }
+  // 绳那一支：断在他卧室里（梳子还没拿）就把那一问摆回来；
+  // 断在自己屋里的话，床上那根绳一直是可点的，箭头也指着它，不会没有出口。
+  if (node === 'hisbed' && has('knotTrip') && !has('knotHair')) { hairPickBeat(true); return true; }
+  if (node === 'bedroom' && has('knotTied')
+      && (has('knotRule') || has('knotNote'))) { knotEndChoice(true); return true; }
   if (node === 'underbed') {
     if (has('ch2Under')) {
       if (!has('sawBox')) { shoeboxBeat(); return true; }
@@ -3446,6 +4526,9 @@ function resumeFix() {
   // 被发现之后那一整段（尖叫→对峙→动手）里没有一个中途的 mark，断在哪儿都从尖叫重来。
   // 它自己会再溶回卧室，所以已经被顶到 hisbed 也能接。
   if (node === 'hisbed' && has('phoneOut')) { caughtBeat(); return true; }
+  // 头发那段演出会被"切后台再回来"打断：foundHair 已标、coupleHome 还没到，
+  // 床底热点不出现，玩家只剩上下楼可点。回前台自动把"门响了"的收尾补上。
+  if (node === 'hisbed' && has('foundHair') && !has('coupleHome')) { coupleHomeArrive(); return true; }
   if (node === 'ndbed' && has('peeped2') && !has('invited')) { ch2InviteBeat(); return true; }
   return false;
 }
@@ -3477,9 +4560,13 @@ let wasHidden = false;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     wasHidden = true;
-    save();                                    // 把离开后台前的最新剧情状态留下
+    if (!resetting) save();                    // 离开后台留下进度；重启/读档那一下不写，免得把刚清的又写回去
+    // 切后台自动静音（保留原有音频状态，回前台恢复）
+    if (master) { master._preMute = master.gain.value; master.gain.value = 0; }
     return;
   }
+  // 回前台恢复音频（如果之前被静音）
+  if (master && master._preMute !== undefined) { master.gain.value = master._preMute; delete master._preMute; }
   if (!wasHidden) return;
   wasHidden = false;
   sceneId++;                                   // 让后台被冻结的 callScene 安静收尾
@@ -3751,6 +4838,7 @@ function afterBeat() {
   }
 }
 function showEnding(e) {
+  stat('ending', {id: e.id || '', title: e.title || ''});   // 终局（含换章卡）到底打出哪一个
   endEl.querySelector('h2').textContent = e.title;
   endEl.querySelector('p').textContent = e.text;
   // 有 next 的卡不是终局，是换章：按钮变成"继续"，点下去接着往下演。
@@ -3878,8 +4966,10 @@ function setPhoto(src) {
 function showPhoto(i) {
   const was = photoIdx;
   photoIdx = i;
+  if (i >= 0) stat('photo_wall', {phase: was < 0 ? 'open' : 'page', i});   // 打开和翻页都记一笔
   if (i >= 0) setPhone(false);                   // 看照片墙的时候手自然垂下去
   if (i < 0) {                                   // 看完了，收回来
+    if (was >= 0) stat('photo_wall', {phase: 'close'});
     wallSeq++;                                   // 还在路上的那张作废，别等收了之后再冒出来
     photosEl.classList.remove('busy');
     photoImg.classList.remove('wait');
@@ -3998,6 +5088,7 @@ function loadSlot(i) {
   const d = readSlot(i);
   if (!d) return;
   delete d.thumb; delete d.at; delete d.scene;
+  resetting = true;                             // 读档同"重新开始"：reload 时别让 visibilitychange 把当前进度盖回
   removeEventListener('beforeunload', save);        // 别在卸载的路上把当前进度盖回去
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) {}
   location.reload();                               // 读档走一遍完整的初始化，最稳
