@@ -3134,6 +3134,13 @@ const PLATE_BASIN = ['images/basin-night.jpg', '50% 50%'];
 const PLATE_HIM_DOOR = ['images/him-doorway-night.jpg', '50% 30%'];
 const PLATE_POT_BROKEN = ['images/pot-broken.jpg', '50% 50%'];
 const PLATE_SINK = ['images/gu-sink-end.jpg', '50% 50%'];
+// 生效后的回归与反噬：男友先像真的在挽回，随后身体和关系一起坏掉
+const PLATE_HIM_APOLOGY = ['images/him-apology-phone.jpg', '50% 50%'];
+const PLATE_HIM_RETURN = ['images/him-doorway-return.jpg', '50% 45%'];
+const PLATE_GU_TOOTH_BASIN = ['images/gu-tooth-basin.jpg', '50% 50%'];
+const PLATE_GU_TOOTH_HAND = ['images/gu-tooth-hand.jpg', '50% 50%'];
+const PLATE_GU_SKIN = ['images/gu-skin-underthing.jpg', '50% 50%'];
+const PLATE_GU_EMBRACE = ['images/gu-him-embrace.jpg', '50% 50%'];
 // 绳线八张：九结、绳结内层那行字、梳子上那两缕、编结的手、纸条、
 // 便利店玻璃外那个人、她整理出来的那一整桌你、剪断之后
 const PLATE_ROPE = ['images/rope-nine.jpg', '50% 50%'];
@@ -3147,6 +3154,11 @@ const PLATE_CUT = ['images/knot-cut.jpg', '50% 50%'];
 // 两张共用：Sarah 那三条短信、他站在雨里
 const PLATE_SMS = ['images/sarah-sms.jpg', '50% 50%'];
 const PLATE_HIM_RAIN = ['images/him-outside-rain.jpg', '50% 50%'];
+const PLATE_KNOT_MESSAGE = ['images/knot-him-message.jpg', '50% 50%'];
+const PLATE_KNOT_EMPTY = ['images/knot-empty-life.jpg', '50% 50%'];
+const PLATE_KNOT_DOOR = ['images/knot-doorway.jpg', '50% 50%'];
+const PLATE_KNOT_REFLECTION = ['images/knot-no-reflection.jpg', '50% 50%'];
+const PLATE_KNOT_WRIST = ['images/knot-cord-wrist.jpg', '50% 50%'];
 // 贴片预热。以前是模块加载时一口气 new Image() 十五张——在慢网上这十五张会跟
 // 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成一张一张排队，
 // 而且等到玩家点了"进入"之后才开始（那时候第一张全景已经在解码了）。
@@ -3179,7 +3191,11 @@ const PRELOAD_SARAH = [PLATE_COUNTER, PLATE_KEEPER, PLATE_SHELF,
                        PLATE_SMS, PLATE_HIM_RAIN,
                        PLATE_ROPE, PLATE_ROPE_TEXT, PLATE_COMB, PLATE_TYING,
                        PLATE_NOTE, PLATE_WINDOW, PLATE_DOSSIER,
-                       PLATE_POT_BROKEN, PLATE_SINK, PLATE_CUT];
+                       PLATE_POT_BROKEN, PLATE_SINK, PLATE_CUT,
+                       PLATE_HIM_APOLOGY, PLATE_HIM_RETURN, PLATE_GU_TOOTH_BASIN,
+                       PLATE_GU_TOOTH_HAND, PLATE_GU_SKIN, PLATE_GU_EMBRACE,
+                       PLATE_KNOT_MESSAGE, PLATE_KNOT_EMPTY, PLATE_KNOT_DOOR,
+                       PLATE_KNOT_REFLECTION, PLATE_KNOT_WRIST];
 
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
@@ -3997,15 +4013,18 @@ async function guAfterFeed() {
     mark('guHim');
     await sleep(900);
     await callScene([
-      {t: '第二天他就来了。他站在你家门口，说他不知道自己这几天是怎么了。', d: 8.0,
-       f: () => showPlate(PLATE_HIM_DOOR)},
+      {t: '第二天早上，手机先亮了。他发来三条消息：对不起、我和 Claire 分手了、我想见你。',
+       d: 8.0, f: () => showPlate(PLATE_HIM_APOLOGY)},
+      {t: '他说不是因为你逼他。是他终于承认，自己一直在骗她，也一直在骗你。', d: 8.0},
+      {t: '下午他就来了。他站在你家门口，说他不知道自己这几天是怎么了。',
+       d: 8.0, f: () => showPlate(PLATE_HIM_RETURN)},
       {who: 'Jude', t: '「我脑子里全是你。」', d: 4.6},
       {who: 'Jude', t: '「我一刻都不想离开你。」', d: 5.0},
-      {who: 'Jude', t: '「你别关灯，我想看着你。」', d: 5.4},
+      {who: 'Jude', t: '「你不原谅我也没关系，但你别再躲我。」', d: 5.4},
       {t: '他在你门口坐了一整夜。以前他连回你一条消息都要隔两天。', d: 8.0,
        f: () => { S.dread += 3; }},
       {t: '你等了两年的那句话，今天晚上他说了三遍。第三遍的时候你没有听见——'
-          + '你在想别的事。', d: 9.0, f: hidePlate},
+          + '你在想嘴里那股越来越重的铁锈味。', d: 9.0, f: hidePlate},
     ]);
   } else if (n === 2 && !has('guCost')) {
     mark('guCost');
@@ -4013,9 +4032,11 @@ async function guAfterFeed() {
     await callScene([
       {t: '他把 Claire 的号码删了。他删的时候让你看着。', d: 6.6},
       {t: '屋里开着暖气。你穿着外套还在抖。', d: 5.6, f: () => { S.dread += 3; }},
-      {t: '早上刷牙的时候牙龈出血。你不觉得奇怪——你现在到处都在出血。', d: 7.6,
-       f: () => showPlate(PLATE_BASIN)},
-      {t: '你想不起来没遇见他之前的自己是什么样子。', d: 6.4, f: hidePlate},
+      {t: '早上刷牙的时候牙龈出血。你吐出来一颗牙，牙根上缠着一小片灰白色的虫壳。', d: 7.6,
+       f: () => showPlate(PLATE_GU_TOOTH_BASIN)},
+      {t: '你把它捏在掌心。手机同时亮起来——他问你为什么不回消息。', d: 6.8,
+       f: () => showPlate(PLATE_GU_TOOTH_HAND)},
+      {t: '你想不起来没遇见他之前的自己是什么样子。只记得他球鞋的尺码。', d: 6.4, f: hidePlate},
     ]);
   } else if (n === 3 && !has('guSarahCall')) {
     mark('guSarahCall');
@@ -4024,6 +4045,11 @@ async function guAfterFeed() {
       {t: '手机响了一声。是 Sarah，只有一句话。', d: 5.4, f: () => blip('ring')},
       {who: 'Sarah', t: '「一切都在变好。再给一点就够了。」', d: 6.0,
        f: () => { S.dread += 3; }},
+      {t: '你按住胸口。皮肤下面有一截东西慢慢游过去，像在找出口。', d: 7.8,
+       f: () => showPlate(PLATE_GU_SKIN)},
+      {t: 'Jude 从背后抱住你。他抱得很紧，像怕你会从身体里面消失。', d: 7.8,
+       f: () => showPlate(PLATE_GU_EMBRACE)},
+      {who: 'Jude', t: '「你少一点也没关系。只要你还在我这里。」', d: 6.0, f: hidePlate},
     ]);
   }
   // 线索齐了：觉醒。没齐而且已经喂到第六夜：沉沦。
@@ -4301,8 +4327,10 @@ async function knotHimBeat() {
      f: () => showPlate(PLATE_HIM_RAIN)},
     {t: '他在那儿站了四十分钟。你数着。', d: 5.6},
     {t: '他上来敲门，说他一晚上没睡，说他不知道自己这是怎么了。', d: 7.8},
+    {t: '他把手机递给你看：他已经和 Claire 分手了。他说不是因为你，是因为他不能再骗她。',
+     d: 8.6, f: () => showPlate(PLATE_KNOT_MESSAGE)},
     {who: 'Jude', t: '「我脑子里全是你。」', d: 4.6},
-    {who: 'Jude', t: '「你别关门，我就在这儿待着。」', d: 5.2},
+    {who: 'Jude', t: '「你不原谅我也没关系。我只想在你门外待着。」', d: 5.2},
     {t: '你等了两年的那句话，今天他站在你门口说了两遍。', d: 7.4, f: hidePlate},
     {t: '你伸手抱他的时候，心里没有你以为会有的那种滚烫。', d: 7.6,
      f: () => { S.dread += 3; }},
@@ -4318,8 +4346,12 @@ async function knotNumbBeat() {
     {t: '你把这件事记下来了，因为你知道以前的你会高兴。', d: 7.0},
     {t: '楼下有人吵架，吵得很凶。你站在窗边看了一会儿，什么感觉都没有。', d: 8.4,
      f: () => { S.dread += 4; }},
-    {t: '他一天来三趟。你开始想，他这样是不是也挺好——反正你现在也感觉不到烦。', d: 9.0,
-     f: hidePlate},
+    {t: '他一天来三趟。你的相册里其他人的脸开始变模糊，只剩他的脸越来越清楚。', d: 9.0,
+     f: () => showPlate(PLATE_KNOT_EMPTY)},
+    {t: '你问他还记不记得自己的朋友。他想了很久，只说：我只记得你。', d: 7.2},
+    {t: '他站到镜子前。镜子里没有他，只有你的手搭在他肩上。', d: 7.2,
+     f: () => showPlate(PLATE_KNOT_REFLECTION)},
+    {who: 'Jude', t: '「你看，现在这里终于没有别人了。」', d: 5.4, f: hidePlate},
   ]);
   await knotAfter();
 }
