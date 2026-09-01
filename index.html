@@ -573,7 +573,7 @@ const NODES = {
        text:'衣架空了三个。你只有两件外套。'},
       // ——— 闺蜜线 · 情蛊那一支 ———
       // 罐子摆在床头柜上（坐标照全景图量的：台灯右边那块台面 u0.423 / v0.618）。
-      // 它是这一支唯一的推进点：点一次算一夜，第二次点是把它倒过来看罐底那行字。
+      // 它是这一支唯一的推进点：点一次算喂一次，第二次点是把它倒过来看罐底那行字。
       {u:0.423, v:0.618, label:'陶罐', id:'pot', action:'pot', size:0.16, dread:2,
        if: () => has('guChosen') && has('shopDone')},
       // 窗台上那台手机。只有"还有没翻到的东西"的时候才出现——两块线索都拿到了就收掉，
@@ -625,8 +625,12 @@ const NODES = {
     onArrive: () => {
       if (has('shopSeen')) return;
       mark('shopSeen');
-      setTimeout(() => say('这条街你走过几百次。左边那家洗衣房，右边那家报刊亭，'
-                         + '中间从来没有门。', 7000), 900);
+      // 走 callScene 而不是 say()：只有 callScene 才占着 sceneBusy，
+      // 箭头得等这句说完再出来（say 不占，箭头会跟这句一起冒出来抢注意力）。
+      setTimeout(() => callScene([
+        {t: '这条街你走过几百次。左边那家洗衣房，右边那家报刊亭，中间从来没有门。',
+         d: 7.0},
+      ]), 900);
     },
     spots: [
       {u:0.483, v:0.530, label:'那扇亮着的门', id:'shopdoor', to:'shop', arrive:0.5,
@@ -1852,7 +1856,7 @@ addEventListener('keydown', e => {
   if (pnEl.style.display === 'flex' || cfEl.style.display === 'flex') {
     if (e.code === 'Escape') {
       if (cfEl.style.display === 'flex') cfEl.style.display = 'none';
-      else pnEl.style.display = 'none';
+      else { pnEl.style.display = 'none'; setPaused(false); }
     }
     return;
   }
@@ -2196,14 +2200,48 @@ const ray = new THREE.Raycaster();
 // 用 innerHTML 是为了那一行说话人，所以正文得转义——台词里现在没有尖括号，
 // 但以后随手写一句带 < 的就会把字幕吃掉，先挡住。
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// ——— 暂停 ———
+// 设置面板一开，整个游戏停住：字幕不再往下走、人声和环境音挂起、走动和视角冻住。
+// 以前不停，玩家点开设置看存档的时候剧情还在自己演，回来发现错过了两句。
+// 做法是所有"等一段时间"都走 pTimeout：暂停时把剩下的毫秒数记住，恢复时接着走，
+// 而不是让 setTimeout 在后台跑完。
+let paused = false;
+const pauseTimers = new Set();
+function pTimeout(fn, ms) {
+  const h = {left: ms, at: 0, t: null};
+  h.arm = () => {
+    h.at = performance.now();
+    h.t = setTimeout(() => { pauseTimers.delete(h); fn(); }, h.left);
+  };
+  h.hold = () => {
+    clearTimeout(h.t);
+    h.left = Math.max(0, h.left - (performance.now() - h.at));
+  };
+  h.cancel = () => { clearTimeout(h.t); pauseTimers.delete(h); };
+  pauseTimers.add(h);
+  if (!paused) h.arm();
+  return h;
+}
+function setPaused(on) {
+  if (paused === on) return;
+  paused = on;
+  for (const h of pauseTimers) on ? h.hold() : h.arm();
+  if (on) {
+    keys.clear();                              // 按着 W 点开面板的话，别让人一边看存档一边往前走
+    AC?.suspend();                             // 人声、雨声、震动一起挂起，恢复时接着响
+  } else {
+    AC?.resume();
+    lastSay = performance.now();               // 别让看门狗把"刚暂停完"当成卡住
+  }
+}
 let lastSay = 0;                               // 最后一句字幕的时间，看门狗用
 const say = (txt, ms = 4200, who = '') => {
   if (!txt) return;
   lastSay = performance.now();                 // 看门狗靠它判断"这会儿还有没有戏在演"
   storyEl.innerHTML = (who ? '<b class="who">' + esc(who) + '</b>' : '') + esc(txt);
   storyEl.classList.add('on');
-  clearTimeout(storyEl._t);
-  storyEl._t = setTimeout(() => storyEl.classList.remove('on'), ms);
+  storyEl._t?.cancel();
+  storyEl._t = pTimeout(() => storyEl.classList.remove('on'), ms);
 };
 
 const ndc = new THREE.Vector2();
@@ -2277,7 +2315,7 @@ function guideFor(n) {
     if (n === 'shopstreet') return [{id: 'shopdoor', tip: '进那扇门', what: '亮着的那扇门'}];
     if (n === 'shop') return [];
   }
-  // 拿回来之后：情蛊那一支的每一夜都指着床头柜上那只罐子，别的房间先指回卧室。
+  // 拿回来之后：情蛊那一支每喂一次都指着床头柜上那只罐子，别的房间先指回卧室。
   // 手机上那两块线索是玩家自己去翻的，箭头一次都不指它们。
   if (has('guChosen') && !has('guKeep') && !has('guBreak') && !has('guSink')) {
     if (n === 'bedroom') return [{id: 'pot', tip: has('guWake') ? '那只罐子' : '喂它',
@@ -2531,7 +2569,7 @@ async function askPick(id, ...labels) {
 // 一段通话按顺序走：有配音的那句等配音放完，没配音的按 d 秒等。
 // sceneId 一变（放下手机、按红键挂断）整段就作废，不会串到下一次。
 let sceneId = 0;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const sleep = ms => new Promise(r => pTimeout(r, ms));
 // 字幕可以点击（或按空格）加速：每一句底下挂一个"跳过"的口子，点了立刻走下一句，
 // 不点就按原来的秒数自然流下去。
 // 房间剧情每句开头留 320 毫秒的保护期——不然"点击热点"、"点选项"那一下会顺手把第一句也吃掉，
@@ -2549,12 +2587,13 @@ function waitStep(ms) {
       if (done) return;
       done = true;
       if (stepSkip === fin) stepSkip = null;
-      clearTimeout(t1); clearTimeout(t2);
+      t1.cancel(); t2.cancel();
       resolve(how);
     };
-    const t1 = setTimeout(() => fin('time'), ms);
+    // 走 pTimeout：设置面板开着的时候这一句不许自己流过去（见 setPaused）
+    const t1 = pTimeout(() => fin('time'), ms);
     const protect = callOn && callEl.classList.contains('calling') ? 0 : 320;
-    const t2 = setTimeout(() => { if (!done) stepSkip = fin; }, Math.min(protect, ms));
+    const t2 = pTimeout(() => { if (!done) stepSkip = fin; }, Math.min(protect, ms));
   });
 }
 // 有没有正在走的台词段。引导箭头靠它判断"现在是不是该让玩家点东西"（见 drawGuide）。
@@ -2925,7 +2964,7 @@ app.addEventListener('click', e => {
     ]);
   } else if (h.action === 'pot') {
     // 同一只罐子的两件事：喂它，和把它倒过来看罐底。
-    // 第一夜喂完之后的那一下点击给罐底——这块线索太容易漏，漏了就只能滑向沉沦，
+    // 第一次喂完之后的那一下点击给罐底——这块线索太容易漏，漏了就只能滑向沉沦，
     // 所以它不靠玩家自己想到"翻过来看看"，但另外两块（手机上那两处）仍然可以完全不看。
     if (!has('guWake') && (S.guFeed || 0) >= 1 && !has('guRule')) { guRuleBeat(); return; }
     potBeat(h);
@@ -3143,7 +3182,7 @@ const PLATE_KNIFE = ['images/claire-knife.jpg', '50% 50%'];
 const PLATE_COUNTER = ['images/shop-counter.jpg', '50% 50%'];
 const PLATE_KEEPER = ['images/shop-keeper.jpg', '50% 50%'];
 const PLATE_SHELF = ['images/shop-shelf.jpg', '50% 50%'];
-// 蛊线十张：罐子（封着 / 开了 / 罐底那行字）、第一夜、第四夜它自己爬出来、
+// 蛊线十张：罐子（封着 / 开了 / 罐底那行字）、第一次喂、第四次它自己爬出来、
 // 代价（相册、洗手池）、他守在门口、罐碎、沉沦
 const PLATE_POT = ['images/pot-sealed.jpg', '50% 50%'];
 const PLATE_POT_OPEN = ['images/pot-open.jpg', '50% 50%'];
@@ -3172,11 +3211,11 @@ const PLATE_GU_TOOTH_BOX = ['images/gu-tooth-box-v1.png', '50% 50%'];
 const PLATE_GU_KEY = ['images/gu-key-inside-v1.png', '50% 50%'];
 const PLATE_GU_BEDSIDE = ['images/gu-bedside-guard-v1.png', '50% 50%'];
 const PLATE_GU_MIRROR = ['images/gu-mirror-gaunt-face-v1.png', '50% 50%'];
-// 绳线八张：九结、绳结内层那行字、梳子上那两缕、编结的手、纸条、
+// 绳线八张：九结、绳结内层那行字、梳子上那两根、编结的手、纸条、
 // 便利店玻璃外那个人、她整理出来的那一整桌你、剪断之后
 const PLATE_ROPE = ['images/rope-nine.jpg', '50% 50%'];
 const PLATE_ROPE_TEXT = ['images/rope-inner.jpg', '50% 50%'];
-const PLATE_COMB = ['images/comb-two-hairs.jpg', '50% 50%'];
+const PLATE_COMB = ['images/comb-two-hairs-v2.png', '50% 50%'];
 const PLATE_TYING = ['images/knot-tying.jpg', '50% 50%'];
 const PLATE_NOTE = ['images/claire-note.jpg', '50% 50%'];
 const PLATE_WINDOW = ['images/claire-window.jpg', '50% 50%'];
@@ -3202,17 +3241,26 @@ const PLATE_SARAH_WARNING = ['images/sarah-shop-warning-v2.png', '50% 50%'];
 const PLATE_SARAH_GOODBYE = ['images/sarah-says-goodbye-v2.png', '50% 50%'];
 const PLATE_CLAIRE_WINDOW = ['images/claire-store-window-v1.png', '50% 50%'];
 // 贴片预热。以前是模块加载时一口气 new Image() 十五张——在慢网上这十五张会跟
-// 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成一张一张排队，
+// 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成排队，
 // 而且等到玩家点了"进入"之后才开始（那时候第一张全景已经在解码了）。
-function preloadPlates(list) {
+//
+// 一张一张排、每张之间再等 120ms 又太保守了：一张贴片平均 1.2MB，手机 3Mbps 上
+// 单张就要三四秒，而一句台词只有 6-8 秒。四十多张串着排，后面那些等到演出过去了
+// 还没到，玩家看到的就是"这一拍怎么没图"。改成三条并发、不留间隔：带宽照样是那么多，
+// 但队尾那些图能早得多地到位。PLATE_DONE 记已经到手的，per-beat 的预热据此跳过。
+const PLATE_DONE = new Set();
+function preloadPlates(list, lanes = 3) {
   let i = 0;
-  const next = () => {
+  const pump = () => {
     if (i >= list.length) return;
+    const src = list[i++][0];
+    if (PLATE_DONE.has(src)) { pump(); return; }
     const im = new Image();
-    im.onload = im.onerror = () => setTimeout(next, 120);
-    im.src = list[i++][0];
+    im.onload = () => { PLATE_DONE.add(src); pump(); };
+    im.onerror = pump;
+    im.src = src;
   };
-  next();
+  for (let k = 0; k < lanes; k++) pump();
 }
 const PRELOAD_CH1 = [PLATE_DOOR, PLATE_HAIR, PLATE_CLAIRE, PLATE_FRAME,
                      PLATE_STANDOFF, PLATE_APPRAISE,
@@ -3245,6 +3293,14 @@ const PRELOAD_SARAH = [PLATE_COUNTER, PLATE_KEEPER, PLATE_SHELF,
                        PLATE_KNOT_MIMIC, PLATE_SARAH_WINDOW, PLATE_CLAIRE_WINDOW,
                        PLATE_SARAH_PICKUP, PLATE_SARAH_WALK, PLATE_SARAH_WARNING,
                        PLATE_SARAH_GOODBYE];
+// 蛊线每喂一次之后那一段会用到的图。点罐子那一下就先拉这一摞（见 potBeat）：
+// 喂那一句本身有五到七秒，正好够第一张到位，不然那一拍就是"字幕有图没出来"。
+const PRELOAD_GU_AFTER = [PLATE_HIM_APOLOGY, PLATE_HIM_RETURN, PLATE_GU_MOVES_IN,
+                          PLATE_GU_SHARED_ROOM, PLATE_GU_TOOTH_BASIN,
+                          PLATE_GU_TOOTH_HAND, PLATE_GU_TONGUE, PLATE_GU_SKIN,
+                          PLATE_GU_EMBRACE, PLATE_GU_JAR_CHEW, PLATE_GU_HEART,
+                          PLATE_GU_HAIR_NAIL, PLATE_GU_MIRROR, PLATE_GU_TOOTH_BOX,
+                          PLATE_GU_KEY, PLATE_GU_BEDSIDE];
 
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
@@ -3259,6 +3315,7 @@ function showPlate([src, pos]) {
   const seq = ++plateSeq;
   const apply = url => {
     if (seq !== plateSeq) return;
+    PLATE_DONE.add(src);
     plateEl.src = url;
     plateEl.style.objectPosition = pos;
     plateEl.classList.add('on');
@@ -3960,7 +4017,7 @@ async function shopPickBeat(resume) {
       {who: 'Sarah', t: '「它拿走的东西你自己挑不了。可能是记性，可能是力气，'
           + '可能是你还记得的某一年。你给得越多，他爱得越凶。」', d: 10.4, a: 'sarah-8',
        f: () => { S.dread += 4; }},
-      {who: 'Sarah', t: '「另一根是九结绳。它要一缕头发——他的，和你自己的，编进去，'
+      {who: 'Sarah', t: '「另一根是九结绳。它要一根头发——他的，和你自己的，编进去，'
           + '一个结许一个愿，九个结打完就成了。」', d: 10.0, a: 'sarah-9'},
       {who: 'Sarah', t: '「绳子只认头发是谁的。它不听你心里想的是谁。」', d: 7.0, a: 'sarah-10',
        f: () => { S.dread += 3; blip('note'); }},
@@ -4021,7 +4078,7 @@ async function sarahLeaveBeat() {
     await callScene([
       {t: '你回到自己的卧室，把绳子摊在床上，数了一遍：九个结的位子，一个都没打。', d: 8.0,
        f: () => showPlate(PLATE_ROPE)},
-      {t: '它要一缕他的头发。而他家的门，你知道从来不锁。', d: 6.8, f: hidePlate},
+      {t: '它要一根他的头发。而他家的门，你知道从来不锁。', d: 6.8, f: hidePlate},
     ]);
   }
   applyGuide();
@@ -4029,15 +4086,15 @@ async function sarahLeaveBeat() {
   save();
 }
 // ——— 情蛊线 ———
-// 喂养循环：同一个热点点一次算一夜（S.guFeed）。台词一夜比一夜短，因为她越来越不当回事。
-// 第一夜见血，但只给"一滴将落"和事后的纱布，不给伤口特写、不给刀在皮肤上的动作。
+// 喂养循环：同一个热点点一次算一次（S.guFeed）。台词一次比一次短，因为她越来越不当回事。
+// 第一次见血，但只给"一滴将落"和事后的纱布，不给伤口特写、不给刀在皮肤上的动作。
 const FEED_LINES = [
   ['你按它给你的规矩做了。这一段你不会写进任何人能看见的地方。', 7.4],
-  ['第二夜。袖口的纱布换过一次，你没记住是什么时候换的。', 6.6],
-  ['第三夜。你数不清这是第几个晚上了。罐子比第一天重。', 6.4],
-  ['第四夜。你已经不用开灯了。', 5.0],
-  ['第五夜。你把手伸过去的时候，另一只手在给他发消息。', 6.2],
-  ['第六夜。你看了看自己两只手：你还有八根手指没用过。', 6.6],
+  ['第二次。袖口的纱布换过一回，你没记住是什么时候换的。', 6.6],
+  ['第三次。你数不清这是第几次了。罐子比第一天重。', 6.4],
+  ['第四次。你已经不用开灯了。', 5.0],
+  ['第五次。你把手伸过去的时候，另一只手在给他发消息。', 6.2],
+  ['第六次。你看了看自己两只手：你还有八根手指没用过。', 6.6],
 ];
 let feedRunning = false;
 async function potBeat(h) {
@@ -4046,6 +4103,7 @@ async function potBeat(h) {
   // 看完真相之后这个罐子只剩一件事可做：那个二选一（保留 / 摔了）
   if (has('guWake')) { await guEndChoice(true); return; }
   feedRunning = true;
+  preloadPlates(PRELOAD_GU_AFTER, 4);           // 喂这一句的几秒钟用来拉后面那段的图
   const n = S.guFeed || 0;
   if (n === 0) {
     await callScene([
@@ -4077,7 +4135,7 @@ async function potBeat(h) {
   save();
   await guAfterFeed();
 }
-// 每喂完一夜之后：先给假象（他回来了），再给代价，喂到第六夜还没读懂真相就滑向沉沦。
+// 每喂完一次之后：先给假象（他回来了），再给代价，喂到第六次还没读懂真相就滑向沉沦。
 async function guAfterFeed() {
   const n = S.guFeed || 0;
   if (n >= 1 && !has('guMovedIn')) {
@@ -4141,7 +4199,7 @@ async function guAfterFeed() {
     ]);
     mark('guBodyEarly');
   }
-  // 旧版本只写到前三夜；旧档在这里补演缺失的身体和声音变化。
+  // 旧版本只写到前三次；旧档在这里补演缺失的身体和声音变化。
   if (n >= 3 && !has('guBodyEarly')) {
     mark('guBodyEarly');
     await callScene([
@@ -4157,7 +4215,7 @@ async function guAfterFeed() {
   if (n === 4 && !has('guBody4')) {
     mark('guBody4');
     await callScene([
-      {t: '第四夜。你已经习惯床的另一边有他的呼吸。枕头上粘着一撮头发，你捻起发根，发现上面带着一点湿白的东西。',
+      {t: '第四次之后。你已经习惯床的另一边有他的呼吸。枕头上粘着一撮头发，你捻起发根，发现上面带着一点湿白的东西。',
        d: 7.8, f: () => { S.dread += 4; }},
       {t: '你去剪指甲，拇指的甲面从中间裂开。裂缝里没有血，只有细细的灰。',
        d: 8.0, f: () => showPlate(PLATE_GU_HAIR_NAIL)},
@@ -4168,7 +4226,7 @@ async function guAfterFeed() {
   } else if (n === 5 && !has('guBody5')) {
     mark('guBody5');
     await callScene([
-      {t: '第五夜。你发现自己怕光。窗帘一拉开，皮肤下面的东西就开始往阴影里缩。',
+      {t: '第五次之后。你发现自己怕光。窗帘一拉开，皮肤下面的东西就开始往阴影里缩。',
        d: 7.8, f: () => { S.dread += 4; showPlate(PLATE_GU_SKIN); }},
       {t: '你躲进浴室，镜子里那张脸让你停了很久。眼窝凹下去，眼白布满红丝；嘴唇干裂发紫，牙几乎掉光了。',
        d: 9.2, f: () => { S.dread += 6; showPlate(PLATE_GU_MIRROR); }},
@@ -4184,7 +4242,7 @@ async function guAfterFeed() {
   } else if (n === 6 && !has('guBody6')) {
     mark('guBody6');
     await callScene([
-      {t: '第六夜。你掉了一颗臼齿。Jude 在你们共用的洗手池里捡起它，放进一只透明的小盒子。',
+      {t: '第六次之后。你掉了一颗臼齿。Jude 在你们共用的洗手池里捡起它，放进一只透明的小盒子。',
        d: 8.4, f: () => { S.dread += 5; showPlate(PLATE_GU_TOOTH_BOX); }},
       {t: '盒子里已经有三颗了。他说要替你保管，因为你以后可能会忘记它们属于你。',
        d: 8.0},
@@ -4192,17 +4250,17 @@ async function guAfterFeed() {
        d: 8.0, f: () => { S.dread += 6; showPlate(PLATE_GU_SKIN); }},
       {t: '他把外套扣子解下来，缝在罐口那道裂缝上，像给它补一张嘴。你的钥匙在他掌心，门从里面拧不开。',
        d: 8.2, f: () => showPlate(PLATE_GU_KEY)},
-      {t: '他坐回床边握住你的手。你们已经住在一起六夜，可你第一次觉得自己没有地方可以回去。',
+      {t: '他坐回床边握住你的手。你们已经住在一起有些日子了，可你第一次觉得自己没有地方可以回去。',
        d: 8.0, f: () => showPlate(PLATE_GU_BEDSIDE)},
-      {who: 'Jude', t: '「再一夜，」他说，「你就不会再需要记得自己是谁了。」', d: 7.0,
+      {who: 'Jude', t: '「再喂一次，」他说，「你就不会再需要记得自己是谁了。」', d: 7.0,
        a: 'jude-6', f: hidePlate},
     ]);
   }
-  // 线索齐了：觉醒。没齐而且已经喂到第六夜：沉沦。
+  // 线索齐了：觉醒。没齐而且已经喂到第六次：沉沦。
   if (guClues() === 3) { await guWakeBeat(); return; }
   if ((S.guFeed || 0) >= 6) { await guSinkBeat(); return; }
   // 把操作权交回去之前一定要收片：贴片还盖着的时候 drawGuide 认为"还在演出"，
-  // 箭头不出、房间也看不见，玩家除了盯着一张照片什么都做不了（第四夜就这么卡过）。
+  // 箭头不出、房间也看不见，玩家除了盯着一张照片什么都做不了（第四次那段就这么卡过）。
   hidePlate();
   applyGuide();
   buildSpots(node);
@@ -4303,7 +4361,7 @@ async function guEndChoice(resume) {
       {t: '你把蜡按回去，把罐子摆正。', d: 5.4, f: () => showPlate(PLATE_POT)},
       {t: '就算是旧的诅咒也好。至少现在他是你的。', d: 6.4,
        f: () => { S.dread += 6; }},
-      {t: '往后的每一夜你都照做。你没有再翻过那些旧消息。', d: 7.4, f: hidePlate},
+      {t: '往后每一次你都照做。你没有再翻过那些旧消息。', d: 7.4, f: hidePlate},
     ]);
     save();
     await sleep(1000);
@@ -4333,7 +4391,7 @@ async function guEndChoice(resume) {
     showEnding(END_GU_BREAK);
   }
 }
-// 沉沦：喂到第六夜还没读懂真相。她要到的全要到了，代价也全付了。
+// 沉沦：喂到第六次还没读懂真相。她要到的全要到了，代价也全付了。
 async function guSinkBeat() {
   if (has('guSink')) return;
   mark('guSink');
@@ -4355,8 +4413,8 @@ async function guSinkBeat() {
 }
 // ======================= 闺蜜线 · 九结红绳 =======================
 // 这一支一滴血都没有：它拿走的是"感觉"，所以代价永远写成"少了什么"，不写疼。
-// 分岔只在他床头柜那把梳子上——两缕头发一样的金色、一样长，只差一个直一个卷。
-// 玩家在选的那一刻不可能知道哪缕是谁的，真相要等到绳子起作用之后才由后果说出来。
+// 分岔只在他床头柜那把梳子上——两根头发一样的金棕色、一样长，只差一个直一个卷。
+// 玩家在选的那一刻不可能知道哪根是谁的，真相要等到绳子起作用之后才由后果说出来。
 // —— 一：去他家取一缕头发 ——
 let knotTripping = false;
 async function knotTripBeat() {
@@ -4384,9 +4442,9 @@ async function knotTripBeat() {
   buildSpots(node);
   save();
   await sleep(600);
-  say('绳子要一缕他的头发。你知道他的梳子放在哪儿。', 5600);
+  say('绳子要一根他的头发。你知道他的梳子放在哪儿。', 5600);
 }
-// —— 二：梳子上那两缕。这一下决定整条线，所以走 askPick ——
+// —— 二：梳子上那两根。这一下决定整条线，所以走 askPick ——
 let combRunning = false;
 async function hairPickBeat(resume) {
   if (has('knotHair')) return;
@@ -4401,25 +4459,25 @@ async function hairPickBeat(resume) {
 async function hairPickRun(resume) {
   if (resume) {
     showPlate(PLATE_COMB);
-    say('梳子还搁在床头柜上。两缕头发还缠在梳齿里。', 4600);
+    say('梳子还搁在床头柜上。两根头发还缠在梳齿里。', 4600);
     await sleep(2200);
   } else {
     await callScene([
       {t: '床头柜上那把梳子还是他一直用的那把。梳齿里缠着头发。', d: 7.4,
        f: () => { showPlate(PLATE_COMB); blip('note'); }},
-      {t: '两缕。一样的金色，一样的长短。一缕是直的，一缕是卷的。', d: 8.0,
+      {t: '只有两根。一样的金棕色，一样的长短。一根是直的，一根是卷的。', d: 8.0,
        f: () => { S.dread += 3; }},
-      {t: '你把它们分开摊在台灯下面看了很久。你分不出哪一缕是谁的。', d: 8.4},
-      {t: '你只能挑一缕。', d: 4.6},
+      {t: '你把它们分开摊在台灯下面看了很久。你分不出哪一根是谁的。', d: 8.4},
+      {t: '你只能挑一根。', d: 4.6},
     ]);
   }
-  const pick = await askPick('knotHair', '拿走那缕直的', '拿走那缕卷的');
+  const pick = await askPick('knotHair', '拿走那根直的', '拿走那根卷的');
   mark('knotHair');
   mark(pick === 0 ? 'knotHis' : 'knotHers');
   await callScene([
-    {t: pick === 0 ? '你捏起那缕直的，绕在指头上绕了三圈。' : '你捏起那缕卷的，绕在指头上绕了三圈。',
+    {t: pick === 0 ? '你捏起那根直的，绕在指头上绕了三圈。' : '你捏起那根卷的，绕在指头上绕了三圈。',
      d: 6.4, f: () => blip('click')},
-    {t: '剩下那一缕你留在了梳子上。梳子摆回原来的位置，角度也摆回去了。', d: 7.6,
+    {t: '剩下那一根你留在了梳子上。梳子摆回原来的位置，角度也摆回去了。', d: 7.6,
      f: hidePlate},
   ]);
   save();
@@ -4430,7 +4488,7 @@ async function knotHomeBeat() {
   walking = true;
   await callScene([
     {t: '你顺原路出去，门带上的时候听见锁舌轻轻弹回去的声音——它本来就没锁。', d: 8.4},
-    {t: '回家的路上你一直把手插在口袋里，捏着那一缕。', d: 6.6},
+    {t: '回家的路上你一直把手插在口袋里，捏着那一根。', d: 6.6},
   ]);
   NODES.bedroom.off = 0;
   await fadePano(NODES.bedroom.pano, 2000);
@@ -4443,7 +4501,7 @@ async function knotHomeBeat() {
   await callScene([
     {t: '绳子摊在床上，九个结的位子空着。离子时还有几个钟头。', d: 7.6,
      f: () => showPlate(PLATE_ROPE)},
-    {t: '你把那一缕和自己的一缕并在一起，压在绳头下面等着。', d: 7.4, f: hidePlate},
+    {t: '你把那一根和自己的一根并在一起，压在绳头下面等着。', d: 7.4, f: hidePlate},
   ]);
   applyGuide();
   buildSpots(node);
@@ -4578,7 +4636,7 @@ async function knotDossierBeat() {
   ]);
   await knotAfter();
 }
-// 纸条 + 真相：编进去那一缕是卷的。九个愿一个字都没错，全落在了她身上。
+// 纸条 + 真相：编进去那一根是卷的。九个愿一个字都没错，全落在了她身上。
 async function knotNoteBeat() {
   mark('knotNote');
   await callScene([
@@ -4589,7 +4647,7 @@ async function knotNoteBeat() {
      f: () => { S.dread += 6; }},
     {t: '你把那根绳翻出来，对着灯看。你终于看清了——', d: 7.0,
      f: () => showPlate(PLATE_ROPE_TEXT)},
-    {t: '编进去那一缕是卷的。他的头发是直的。', d: 6.6,
+    {t: '编进去那一根是卷的。他的头发是直的。', d: 6.6,
      f: () => { blip('sting'); S.dread += 6; }},
     {t: '「绳子只认头发是谁的。它不听你心里想的是谁。」', d: 7.6},
     {t: '你许的那九个愿，一个字都没错。它们全落在了她身上。', d: 8.4, f: hidePlate},
@@ -4611,7 +4669,7 @@ async function ropeBeat() {
   if (ropeRunning) { skipStep(); return; }      // 同上：演到一半再点就是催字幕
   if (!has('knotHair')) {
     blip('note');
-    say('它要一缕他的头发。得去他家——他家的门从来不锁。', 5400);
+    say('它要一根他的头发。得去他家——他家的门从来不锁。', 5400);
     return;
   }
   ropeRunning = true;
@@ -4671,11 +4729,11 @@ async function knotEndChoice(resume) {
   if (pick === 0) {
     mark('knotHate');
     await callScene([
-      {t: '你把九个结全拆了，重新编。这一次你换上他那一缕直的。', d: 8.0,
+      {t: '你把九个结全拆了，重新编。这一次你换上他那一根直的。', d: 8.0,
        f: () => showPlate(PLATE_TYING)},
       {t: '第一个结就打不下去。绳子在手里发僵，编出来的全是死结。', d: 8.4,
        f: () => { blip('sting'); S.dread += 6; }},
-      {t: '九结落成那一刻媒介就锁死了。这根绳这辈子只认那一缕卷的。', d: 8.6},
+      {t: '九结落成那一刻媒介就锁死了。这根绳这辈子只认那一根卷的。', d: 8.6},
       {t: '门铃响了。你从猫眼里看出去——她站在门口，手里拎着你上礼拜丢的那把伞。', d: 9.4,
        f: () => showPlate(PLATE_WINDOW)},
       {t: '她笑了。她一句都没有提他。', d: 5.6, f: hidePlate},
@@ -4781,7 +4839,7 @@ function resumeFix() {
 // 两个条件都成立、并且连着三次（6 秒）都这样才动手。
 let stuckHits = 0, stuckSaid = false;
 setInterval(() => {
-  if (!resumed) return;                        // 还没点"进入"，画面本来就是静的
+  if (!resumed || paused) return;              // 还没点"进入"、或者面板开着，画面本来就是静的
   if (walking || sceneBusy > 0 || pickEl.classList.contains('on')
       || phoneUp || callOn || endEl.style.display === 'flex'
       || marks.length || performance.now() - lastSay < 12000) { stuckHits = 0; return; }
@@ -5387,11 +5445,17 @@ document.getElementById('settings').onclick = () => {
   keys.clear();                                    // 按着 W 点开面板的话，别让人一边看存档一边往前走
   drawSlots();
   pnEl.style.display = 'flex';
+  setPaused(true);                                 // 面板开着＝暂停：字幕、声音、走动全停
 };
-document.getElementById('pn-close').onclick = () => { pnEl.style.display = 'none'; };
+const closePanel = () => {
+  pnEl.style.display = 'none';
+  cfEl.style.display = 'none';
+  setPaused(false);
+};
+document.getElementById('pn-close').onclick = closePanel;
 document.getElementById('pn-restart').onclick = () => { cfEl.style.display = 'flex'; };
 document.getElementById('cf-no').onclick = () => { cfEl.style.display = 'none'; };
-document.getElementById('cf-yes').onclick = () => { restartGame(); };
+document.getElementById('cf-yes').onclick = () => { setPaused(false); restartGame(); };
 
 
 
@@ -5469,6 +5533,13 @@ const ease = t => t * t * (3 - 2 * t);
 let tvFrame = 0, tvNextCut = 0;
 function frame() {
   const now = performance.now();
+  // 暂停（设置面板开着）：画面定住，只保留渲染和 rAF。灯光过渡、电视跳帧、走动、
+  // 相机跟随、床震全停，回来时接着上一帧走。
+  if (paused) {
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+    return;
+  }
   if (now >= tvNextCut) {                        // 信号自己在切镜头，间隔不规律才像播放中
     tvFrame = (tvFrame + 1) % TV_N;
     tvNextCut = now + 800 + Math.random() * 1400;
