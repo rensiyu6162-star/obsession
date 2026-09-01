@@ -4163,6 +4163,7 @@ async function guAfterFeed() {
        d: 8.0, f: () => showPlate(PLATE_GU_HAIR_NAIL)},
       {t: 'Jude 就在你身后收拾洗手池。他问你有没有哪里疼。你没有告诉他，浴室门缝下已经伸进来一根发丝。',
        d: 8.2, f: () => { showPlate(PLATE_GU_SHARED_ROOM); }},
+      {t: '他把水关了。你回到床上躺下，那根发丝跟到门口就不见了。', d: 7.0, f: hidePlate},
     ]);
   } else if (n === 5 && !has('guBody5')) {
     mark('guBody5');
@@ -4200,6 +4201,9 @@ async function guAfterFeed() {
   // 线索齐了：觉醒。没齐而且已经喂到第六夜：沉沦。
   if (guClues() === 3) { await guWakeBeat(); return; }
   if ((S.guFeed || 0) >= 6) { await guSinkBeat(); return; }
+  // 把操作权交回去之前一定要收片：贴片还盖着的时候 drawGuide 认为"还在演出"，
+  // 箭头不出、房间也看不见，玩家除了盯着一张照片什么都做不了（第四夜就这么卡过）。
+  hidePlate();
   applyGuide();
   buildSpots(node);
   save();
