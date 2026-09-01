@@ -3156,6 +3156,10 @@ const PLATE_GU_TOOTH_BASIN = ['images/gu-tooth-basin.jpg', '50% 50%'];
 const PLATE_GU_TOOTH_HAND = ['images/gu-tooth-hand.jpg', '50% 50%'];
 const PLATE_GU_SKIN = ['images/gu-skin-underthing.jpg', '50% 50%'];
 const PLATE_GU_EMBRACE = ['images/gu-him-embrace-v2.jpg', '50% 50%'];
+const PLATE_GU_TONGUE = ['images/gu-tongue-numb-v1.png', '50% 50%'];
+const PLATE_GU_JAR_CHEW = ['images/gu-jar-chewing-v1.png', '50% 50%'];
+const PLATE_GU_HEART = ['images/gu-second-heartbeat-v1.png', '50% 50%'];
+const PLATE_GU_HAIR_NAIL = ['images/gu-hair-cracked-nail-v1.png', '50% 50%'];
 // 绳线八张：九结、绳结内层那行字、梳子上那两缕、编结的手、纸条、
 // 便利店玻璃外那个人、她整理出来的那一整桌你、剪断之后
 const PLATE_ROPE = ['images/rope-nine.jpg', '50% 50%'];
@@ -3174,6 +3178,13 @@ const PLATE_KNOT_EMPTY = ['images/knot-empty-life-v2.jpg', '50% 50%'];
 const PLATE_KNOT_DOOR = ['images/knot-doorway-v2.jpg', '50% 50%'];
 const PLATE_KNOT_REFLECTION = ['images/knot-no-reflection-v2.jpg', '50% 50%'];
 const PLATE_KNOT_WRIST = ['images/knot-cord-wrist.jpg', '50% 50%'];
+const PLATE_KNOT_LOCK = ['images/knot-lock-and-hand-v1.png', '50% 50%'];
+const PLATE_KNOT_CONTACTS = ['images/knot-contacts-deleted-v1.png', '50% 50%'];
+const PLATE_KNOT_FAMILY = ['images/knot-family-forgotten-v1.png', '50% 50%'];
+const PLATE_KNOT_POUND = ['images/knot-door-pounding-v2.png', '50% 50%'];
+const PLATE_KNOT_MIMIC = ['images/knot-mimic-girl-v1.png', '50% 50%'];
+const PLATE_SARAH_WINDOW = ['images/sarah-window-watching-v1.png', '50% 50%'];
+const PLATE_CLAIRE_WINDOW = ['images/claire-store-window-v1.png', '50% 50%'];
 // 贴片预热。以前是模块加载时一口气 new Image() 十五张——在慢网上这十五张会跟
 // 第一张全景图抢带宽，开场那几十秒就卡在"什么都还没出来"。改成一张一张排队，
 // 而且等到玩家点了"进入"之后才开始（那时候第一张全景已经在解码了）。
@@ -3209,8 +3220,11 @@ const PRELOAD_SARAH = [PLATE_COUNTER, PLATE_KEEPER, PLATE_SHELF,
                        PLATE_POT_BROKEN, PLATE_SINK, PLATE_CUT,
                        PLATE_HIM_APOLOGY, PLATE_HIM_RETURN, PLATE_GU_TOOTH_BASIN,
                        PLATE_GU_TOOTH_HAND, PLATE_GU_SKIN, PLATE_GU_EMBRACE,
+                       PLATE_GU_TONGUE, PLATE_GU_JAR_CHEW, PLATE_GU_HEART, PLATE_GU_HAIR_NAIL,
                        PLATE_KNOT_MESSAGE, PLATE_KNOT_EMPTY, PLATE_KNOT_DOOR,
-                       PLATE_KNOT_REFLECTION, PLATE_KNOT_WRIST];
+                       PLATE_KNOT_REFLECTION, PLATE_KNOT_WRIST, PLATE_KNOT_LOCK,
+                       PLATE_KNOT_CONTACTS, PLATE_KNOT_FAMILY, PLATE_KNOT_POUND,
+                       PLATE_KNOT_MIMIC, PLATE_SARAH_WINDOW, PLATE_CLAIRE_WINDOW];
 
 const darkEl = document.getElementById('dark');
 const darkOn = () => darkEl.classList.add('on');
@@ -4052,7 +4066,7 @@ async function guAfterFeed() {
       {t: '你把它捏在掌心。手机同时亮起来——他问你为什么不回消息。', d: 6.8,
        f: () => showPlate(PLATE_GU_TOOTH_HAND)},
       {t: '你伸舌头去碰那颗松动的牙。左半边先失去冷热，像被一小块蜡封住了。',
-       d: 7.2, f: () => { S.dread += 3; blip('note'); }},
+       d: 7.2, f: () => { S.dread += 3; blip('note'); showPlate(PLATE_GU_TONGUE); }},
       {t: '你想不起来没遇见他之前的自己是什么样子。只记得他球鞋的尺码。', d: 6.4, f: hidePlate},
     ]);
     mark('guBodyEarly');
@@ -4068,10 +4082,10 @@ async function guAfterFeed() {
       {t: 'Jude 从背后抱住你。他抱得很紧，像怕你会从身体里面消失。', d: 7.8,
        f: () => showPlate(PLATE_GU_EMBRACE)},
       {t: '他松开手的时候，你听见罐子里传出很轻的咀嚼声。一下，又一下。', d: 7.2,
-       f: () => { S.dread += 4; blip('sting'); }},
+       f: () => { S.dread += 4; blip('sting'); showPlate(PLATE_GU_JAR_CHEW); }},
       {t: '你问他听见没有。他把你的手按回胸口：别管它，先听我。', d: 6.8},
       {t: '他的掌心离开以后，胸腔深处又响了一下心跳。不是你的那一下。',
-       d: 7.6, f: () => { S.dread += 4; }},
+       d: 7.6, f: () => { S.dread += 4; showPlate(PLATE_GU_HEART); }},
       {who: 'Jude', t: '「你少一点也没关系。只要你还在我这里。」', d: 6.0, f: hidePlate},
     ]);
     mark('guBodyEarly');
@@ -4081,11 +4095,11 @@ async function guAfterFeed() {
     mark('guBodyEarly');
     await callScene([
       {t: '你伸舌头去碰那颗松动的牙。左半边已经分不出冷和热，像被蜡封住了。', d: 7.2,
-       f: () => { S.dread += 3; }},
+       f: () => { S.dread += 3; showPlate(PLATE_GU_TONGUE); }},
       {t: '罐子里传出很轻的咀嚼声。一下，又一下。你捂住耳朵，它还在身体里面响。',
-       d: 8.0, f: () => { S.dread += 4; blip('sting'); }},
+       d: 8.0, f: () => { S.dread += 4; blip('sting'); showPlate(PLATE_GU_JAR_CHEW); }},
       {t: 'Jude 把你的手按在胸口。你听见两个心跳，其中一个不属于你。', d: 8.0,
-       f: () => { S.dread += 4; showPlate(PLATE_GU_SKIN); }},
+       f: () => { S.dread += 4; showPlate(PLATE_GU_HEART); }},
       {t: '他低声说：别管它，先听我。', d: 5.4, f: hidePlate},
     ]);
   }
@@ -4095,7 +4109,7 @@ async function guAfterFeed() {
       {t: '第四夜。枕头上粘着一撮头发。你捻起发根，发现上面带着一点湿白的东西。',
        d: 7.8, f: () => { S.dread += 4; }},
       {t: '你去剪指甲，拇指的甲面从中间裂开。裂缝里没有血，只有细细的灰。',
-       d: 8.0, f: () => showPlate(PLATE_GU_TOOTH_HAND)},
+       d: 8.0, f: () => showPlate(PLATE_GU_HAIR_NAIL)},
       {t: 'Jude 发来语音。他说他在门外。你没有告诉他，门缝下已经伸进来一根发丝。',
        d: 8.2, f: hidePlate},
     ]);
@@ -4103,11 +4117,11 @@ async function guAfterFeed() {
     mark('guBody5');
     await callScene([
       {t: '第五夜。你发现自己怕光。窗帘一拉开，皮肤下面的东西就开始往阴影里缩。',
-       d: 7.8, f: () => { S.dread += 4; }},
+       d: 7.8, f: () => { S.dread += 4; showPlate(PLATE_GU_SKIN); }},
       {t: '你想把这件事写下来，落笔却漏掉了三个字。再看时，连你为什么要写也忘了。',
        d: 8.4},
       {t: '罐子里忽然传出你的声音：再给一点。他在门外答应你，说马上就来。',
-       d: 8.6, f: () => { S.dread += 5; blip('ring'); }},
+       d: 8.6, f: () => { S.dread += 5; blip('ring'); showPlate(PLATE_GU_JAR_CHEW); }},
       {t: '你低头看见手指甲缝里的灰，突然想不起 Sarah 的脸。', d: 7.0, f: hidePlate},
     ]);
   } else if (n === 6 && !has('guBody6')) {
@@ -4174,6 +4188,8 @@ async function guSarahBeat() {
     {t: '「我知道。让她自己养一遍。」', d: 6.4,
      f: () => { S.dread += 6; blip('sting'); }},
     {t: '她什么都知道。她只是想看一遍——看别人走一遍她走过的那条路。', d: 8.4,
+     f: () => showPlate(PLATE_SARAH_WINDOW)},
+    {t: '你抬头看窗外。雨幕里像有人站过，但玻璃上只剩她的倒影。', d: 6.8,
      f: hidePlate},
   ]);
   await guAfterClue();
@@ -4416,17 +4432,17 @@ async function knotIdentityBeat() {
   mark('knotIdentity');
   await callScene([
     {t: '第一个结落下后，他删掉了通讯录里所有异性的名字。不是赌气，他说那些名字现在没有意义。',
-     d: 8.4, f: () => { S.dread += 3; }},
+     d: 8.4, f: () => { S.dread += 3; showPlate(PLATE_KNOT_CONTACTS); }},
     {t: '第二个结落下后，他把工作辞了。他说每天都在想你，已经没有办法把注意力分给别的事。',
      d: 8.2, f: () => showPlate(PLATE_KNOT_WRIST)},
     {t: '第三个结。他忘了母亲的生日。你提醒他，他看着你，像第一次听见这个词。',
-     d: 7.8, f: () => { S.dread += 4; }},
+     d: 7.8, f: () => { S.dread += 4; showPlate(PLATE_KNOT_FAMILY); }},
     {t: '第四个结。他忘了自己最好的朋友。第五个结，他忘了 Claire，连这个名字曾经属于谁都想不起。',
      d: 8.6},
     {t: '第六个结。他在门口坐着等你。你下楼买水，只离开了六分钟，回来时他正在撞门。',
-     d: 8.4, f: () => { showPlate(PLATE_KNOT_DOOR); S.dread += 5; }},
+     d: 8.4, f: () => { showPlate(PLATE_KNOT_POUND); S.dread += 5; }},
     {t: '第七个结。他坐到你平常坐的位置，穿上你喜欢的那件外套，开始用你的语气说话。',
-     d: 8.4},
+     d: 8.4, f: () => showPlate(PLATE_KNOT_MIMIC)},
     {t: '第八个结。他对着镜子找自己的脸，找不到。你叫他的时候，他才回头。',
      d: 7.8, f: () => { showPlate(PLATE_KNOT_REFLECTION); S.dread += 5; }},
     {t: '第九个结。他张了张嘴，忘了自己的名字。你问他是谁，他只剩下一句回答。',
@@ -4477,7 +4493,7 @@ async function knotWindowBeat() {
   await callScene([
     {t: '第二天他没有来。手机上一条消息都没有。', d: 6.4},
     {t: '晚上十一点你去便利店买烟。抬头的时候，玻璃外面站着一个女人。', d: 8.4,
-     f: () => { showPlate(PLATE_WINDOW); blip('note'); }},
+     f: () => { showPlate(PLATE_CLAIRE_WINDOW); blip('note'); }},
     {t: '是 Claire。她不进来，也不走。她隔着那层玻璃看你，看了很久。', d: 8.4,
      f: () => { S.dread += 5; }},
     {t: '你付完钱出去，她已经不在了。地上留着半个没干的鞋印，冲着门。', d: 8.6,
