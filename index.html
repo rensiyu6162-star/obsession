@@ -1011,6 +1011,9 @@ const endEl = document.getElementById('ending');
 // 这个标记决定三件事：不再申请 Pointer Lock（手机上根本没有）、
 // 那层"点击进入"点一下就永久收掉、以及竖屏时弹劝横屏的遮罩。
 const TOUCH = matchMedia('(pointer:coarse)').matches || navigator.maxTouchPoints > 0;
+// 后台验收页必须永远不碰实体鼠标：测试脚本会带 ?autotest=1。
+// 正式玩家不会走这条，桌面第一人称的 Pointer Lock 体验不受影响。
+const AUTOMATED_TEST = new URLSearchParams(location.search).has('autotest');
 // 设备分档只看"主力指针是粗是细"：手机 / 电脑。不碰 UA、分辨率、IP，统计页按这个分设备数。
 stat('device', {dev: matchMedia('(pointer:coarse)').matches ? '手机' : '电脑'});
 const rotateEl = document.getElementById('rotate');
@@ -1934,7 +1937,7 @@ enterEl.addEventListener('click', () => {
   // 这样它不会拖慢开场，同时玩家走到照片墙时，ex-01…这一组已经在浏览器缓存里。
   warmPhotoWall();
 
-  if (TOUCH) { enterEl.style.display = 'none'; return; }
+  if (TOUCH || AUTOMATED_TEST) { enterEl.style.display = 'none'; return; }
   app.requestPointerLock();
 });
 // 首屏门槛：这一幕要用的东西**全部**就位才放人进去，并且给一条真的进度条。
@@ -2510,8 +2513,9 @@ let sceneId = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // 字幕可以点击（或按空格）加速：每一句底下挂一个"跳过"的口子，点了立刻走下一句，
 // 不点就按原来的秒数自然流下去。
-// 每句开头留 320 毫秒的保护期——不然"点击热点"、"点选项"那一下会顺手把第一句也吃掉，
-// 连点两下也不会一次跳掉两句。
+// 房间剧情每句开头留 320 毫秒的保护期——不然"点击热点"、"点选项"那一下会顺手把第一句也吃掉，
+// 连点两下也不会一次跳掉两句。电话例外：拨号那一下被通讯录热点自己吃掉了，
+// 下一下就是玩家明确要催对话，不能再等。
 let stepSkip = null;
 function skipStep() {
   if (!stepSkip) return false;
@@ -2528,7 +2532,8 @@ function waitStep(ms) {
       resolve(how);
     };
     const t1 = setTimeout(() => fin('time'), ms);
-    const t2 = setTimeout(() => { if (!done) stepSkip = fin; }, Math.min(320, ms));
+    const protect = callOn && callEl.classList.contains('calling') ? 0 : 320;
+    const t2 = setTimeout(() => { if (!done) stepSkip = fin; }, Math.min(protect, ms));
   });
 }
 // 有没有正在走的台词段。引导箭头靠它判断"现在是不是该让玩家点东西"（见 drawGuide）。
