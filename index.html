@@ -4103,38 +4103,44 @@ async function potBeat(h) {
   // 看完真相之后这个罐子只剩一件事可做：那个二选一（保留 / 摔了）
   if (has('guWake')) { await guEndChoice(true); return; }
   feedRunning = true;
-  preloadPlates(PRELOAD_GU_AFTER, 4);           // 喂这一句的几秒钟用来拉后面那段的图
-  const n = S.guFeed || 0;
-  if (n === 0) {
-    await callScene([
-      {t: '蜡封是软的。你用指甲一挑就开了。', d: 5.4,
-       f: () => { showPlate(PLATE_POT); blip('click'); }},
-      {t: '罐口冒出来的味道不是草药。是铁锈，和放了很久的肉。', d: 6.8},
-      {t: '里面那只东西比你的拇指长。灰白色，一节一节，节缝里嵌着别的虫子的壳——'
-          + '它没吐出来，它留着。', d: 9.4,
-       f: () => { showPlate(PLATE_POT_OPEN); S.dread += 6; }},
-      {t: '它感觉到光了。它把前半截立起来，朝你。', d: 6.0, f: () => blip('note')},
-      {t: FEED_LINES[0][0], d: FEED_LINES[0][1],
-       f: () => { showPlate(PLATE_FEED); blip('sting'); S.dread += 6; }},
-      {t: '疼是后来才到的。先到的是困。困得像有人把你的插头拔了。', d: 7.4},
-      {t: '它喝完就缩回罐底，比刚才亮了一点。你把蜡按回去，按不严了。', d: 7.6,
-       f: hidePlate},
-      {t: '你坐在床边等天亮。你没有哭。你在想他明天会不会给你发消息。', d: 7.8,
-       f: () => { S.dread += 4; }},
-    ]);
-  } else {
-    const line = FEED_LINES[Math.min(n, FEED_LINES.length - 1)];
-    await callScene([
-      {t: line[0], d: line[1],
-       f: () => { showPlate(n >= 3 ? PLATE_POT_WAIT : PLATE_FEED); blip('sting'); S.dread += 4; }},
-      {d: 1.6, f: hidePlate},
-    ]);
+  try {
+    preloadPlates(PRELOAD_GU_AFTER, 4);           // 喂这一句的几秒钟用来拉后面那段的图
+    const n = S.guFeed || 0;
+    if (n === 0) {
+      await callScene([
+        {t: '蜡封是软的。你用指甲一挑就开了。', d: 5.4,
+         f: () => { showPlate(PLATE_POT); blip('click'); }},
+        {t: '罐口冒出来的味道不是草药。是铁锈，和放了很久的肉。', d: 6.8},
+        {t: '里面那只东西比你的拇指长。灰白色，一节一节，节缝里嵌着别的虫子的壳——'
+            + '它没吐出来，它留着。', d: 9.4,
+         f: () => { showPlate(PLATE_POT_OPEN); S.dread += 6; }},
+        {t: '它感觉到光了。它把前半截立起来，朝你。', d: 6.0, f: () => blip('note')},
+        {t: FEED_LINES[0][0], d: FEED_LINES[0][1],
+         f: () => { showPlate(PLATE_FEED); blip('sting'); S.dread += 6; }},
+        {t: '疼是后来才到的。先到的是困。困得像有人把你的插头拔了。', d: 7.4},
+        {t: '它喝完就缩回罐底，比刚才亮了一点。你把蜡按回去，按不严了。', d: 7.6,
+         f: hidePlate},
+        {t: '你坐在床边等天亮。你没有哭。你在想他明天会不会给你发消息。', d: 7.8,
+         f: () => { S.dread += 4; }},
+      ]);
+    } else {
+      const line = FEED_LINES[Math.min(n, FEED_LINES.length - 1)];
+      await callScene([
+        {t: line[0], d: line[1],
+         f: () => { showPlate(n >= 3 ? PLATE_POT_WAIT : PLATE_FEED); blip('sting'); S.dread += 4; }},
+        {d: 1.6, f: hidePlate},
+      ]);
+    }
+    S.guFeed = n + 1;
+    save();
+    // 锁一直拿到 这次喂完的后续剧情 演完：以前这里就把 feedRunning 解开了，
+    // 箭头马上指回罐子，再点一下就跳过当前句并开始下一次喂养。
+    await guAfterFeed();
+  } finally {
+    feedRunning = false;
   }
-  S.guFeed = n + 1;
-  feedRunning = false;
-  save();
-  await guAfterFeed();
 }
+if (AUTOMATED_TEST) window.__feedLock = () => ({feed: S.guFeed || 0, running: feedRunning});
 // 每喂完一次之后：先给假象（他回来了），再给代价，喂到第六次还没读懂真相就滑向沉沦。
 async function guAfterFeed() {
   const n = S.guFeed || 0;
@@ -5620,8 +5626,10 @@ function drawGuide() {
   // 演出期间不指引：正在过台词（sceneBusy）、屏幕上盖着贴片、或者正在等玩家选项，
   // 这几种时候玩家该做的事是看和读，不是去点那个热点。
   // 以前只挡 walking，结果一整段对话里箭头一直在那儿抖，看着像"还得再点一下"。
+  // feedRunning 也算：喂完那一句到后续剧情之间有几百毫秒空档（sceneBusy 已经掉到 0），
+  // 箭头一冒出来玩家就会再点罐子，把下一次喂养提前开了。
   const inScene = sceneBusy > 0 || plateEl.classList.contains('on')
-                  || pickEl.classList.contains('on');
+                  || pickEl.classList.contains('on') || feedRunning;
   if (!g || walking || photoIdx >= 0 || notReady || phoneUp || inScene) {
     guideEl.style.display = 'none';
     return;
